@@ -1,0 +1,35 @@
+BUILD:
+======
+
+Run `make` from the root directory or any subdirectory.
+
+HANDIN:
+=======
+
+Ensure writeup.pdf is in the root directory, and then run `make handin` from the root directory. The Makefile is set to automatically clean when generating the handin, but please remove any large output files unaffected by make clean.
+
+CODE:
+=====
+
+sqrt3 contains a simple example MPI program that approximates sqrt(3). It is meant to demonstrate the functionality of MPI.
+
+wire_route contains the skeleton code for the assignment. Please implement your code in this directory.
+
+TEST:
+=====
+
+Testing will be performed on the latedays cluster. In each directory, run the run_latedays.sh script to launch jobs on the cluster. For example,
+
+`./run_latedays.sh 2 4 inputs/easy_1024.txt stdout_easy_1024_2_4.txt`
+
+will run the wire_route code on 2 nodes (a.k.a. machines) and launch 4 processes for each node. Remember to run 'make' first to generate the wire_route binary.
+
+Example inputs to the wire_route program are in the wire_route/inputs directory. We will test your code using these inputs, and we reserve the right to run additional inputs.
+
+To verify the consistency of the output cost array, please refer to the validate.py script in the wire_route directory. For example if your cost matrix is stored in a file called 'costs_easy_1024.txt_32.txt' and your route is stored in a file called 'output_easy_1024.txt_32.txt', you can run the following command:
+
+'python2 validate.py -r inputs/output_easy_1024.txt_32.txt -c inputs/costs_easy_1024.txt_32.txt'
+
+
+
+
