@@ -6,37 +6,65 @@
 #include "mpi.h"
 #include "wire_route.h"
 
+static int g_num_rows = 0;
+static int g_num_cols = 0;
+static int g_delta = 0;
+static int g_num_wires = 0;
+wire_t *wires = NULL;
+cost_t *costs = NULL;
+cost_t *path_costs = NULL;
+cost_t *temp_path_costs = NULL;
+
+
 // Initialize problem
 static inline void init(int numRows, int numCols, int delta, int numWires)
 {
-    //TODO Implement code here
+    g_num_rows = numRows;
+    g_num_cols = numCols;
+    g_delta = delta;
+    g_num_wires = numWires;
+    wires = (wire_t*)calloc(g_num_wires, sizeof(wire_t));
+    costs = (cost_t*)calloc(g_num_rows * g_num_cols, sizeof(cost_t));
+    path_costs = (cost_t*)malloc( (g_num_rows + g_num_cols)* sizeof(cost_t));
+    temp_path_costs = (cost_t*)malloc( (g_num_rows + g_num_cols)* sizeof(cost_t));
 }
+
 
 // Initialize a given wire
 static inline void initWire(int wireIndex, int x1, int y1, int x2, int y2)
 {
-    //TODO Implement code here
+    wire_t wire;
+    wire.x1 = x1;
+    wire.x2 = x2;
+    wire.y1 = y1;
+    wire.y2 = y2;
+    wire.bend_x1 = -1;
+    wire.bend_y1 = -1;
+    wire.bend_x2 = -1;
+    wire.bend_y2 = -1;
+    wire.cost = -1;
+    wires[wireIndex] = wire;    
 }
 
 // Return number of rows
 static inline int getNumRows()
 {
     //TODO Implement code here
-    return 0;
+    return g_num_rows;
 }
 
 // Return number of cols
 static inline int getNumCols()
 {
     //TODO Implement code here
-    return 0;
+    return g_num_cols;
 }
 
 // Return delta
 static inline int getDelta()
 {
 	//TODO Implement code here
-    return 0;
+    return g_delta;
 }
 
 // Return number of wires
