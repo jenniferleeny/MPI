@@ -15,6 +15,13 @@ cost_t *costs = NULL;
 cost_t *path_costs = NULL;
 cost_t *temp_path_costs = NULL;
 
+cost_t max(cost_t x, cost_t y) {
+    return x > y ? x : y;
+}
+
+cost_t min(cost_t x, cost_t y) {
+    return x < y ? x : y;
+}
 
 // Initialize problem
 static inline void init(int numRows, int numCols, int delta, int numWires)
@@ -86,6 +93,60 @@ static inline int getWire(int wireIndex, int* x1, int* y1, int* x2, int* y2, int
 {
     //TODO Implement code here
     return 2;
+}
+
+
+static inline void find_min_path(wire_t wire, double anneal_prob, int *horizontal,
+                int *vertical, int *max_overlap_horiz, int *max_overlap_vert) {
+    int x1, x2, y1, y2;
+    if (wire.x1 <= wire.x2) {
+        x1 = wire.x1;
+        y1 = wire.y1;
+        x2 = wire.x2;
+        y2 = wire.y2;
+    } else {
+        x1 = wire.x2;
+        y1 = wire.y2;
+        x2 = wire.x1;
+        y2 = wire.y1;
+    }
+    int x_max = min(g_num_cols-1, (int)(g_delta/2) + x2);
+    int x_min = max(0, x1 - (int)(g_delta/2));
+    int y_max = min(g_num_rows-1, (int)(g_delta/2) + max(y1, y2));
+    int y_min = max(0, min(y1, y2) - (int)(g_delta/2));
+    if (wire.y1 == wire.y2) {
+        x_min = x1;
+        x_max = x2;
+    }   
+    if (wire.x1 == wire.x2) {
+        y_min = y1;
+        y_max = y2;
+    }
+    if (wire.cost != -1) { 
+        wire.cost = find_wire_cost(wire);
+        change_wire_route(wire, -1);
+    }
+    memset(horizontal, 0, sizeof(cost_t) * g_num_rows);
+    memset(vertical, 0, sizeof(cost_t) * g_num_cols);
+    memset(max_overlap_horiz, 0, sizeof(cost_t) * g_num_rows);
+    memset(max_overlap_vert, 0, sizeof(cost_t) * g_num_cols);
+    int i;
+    for (i = y_min; i <= y_max; i++) {
+        create_vert_horiz(i, wire, horizontal, vertical, 
+                 max_overlap_horiz, max_overlap_vert);
+    }
+}
+
+static inline void wire_routing(double anneal_prob, int *horizontal, int *vertical,
+                                int *max_overlap_horiz, int *max_overlap_vert) {
+    int world_rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
+    int world_size;
+    MPI_Comm_size(MPI_COMM_WORLD,&world_size);
+    for (int i = 0; i < g_num_wires; i++) {
+        find_min_path(wires[i], anneal_prob, int *horizontal, int *vertical,
+                                int *max_overlap_horiz, int *max_overlap_vert);    
+    }
 }
 
 // Perform computation, including reading/writing output files
