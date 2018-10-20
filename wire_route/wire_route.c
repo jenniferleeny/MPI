@@ -49,47 +49,64 @@ static inline void initWire(int wireIndex, int x1, int y1, int x2, int y2)
 // Return number of rows
 static inline int getNumRows()
 {
-    //TODO Implement code here
     return g_num_rows;
 }
 
 // Return number of cols
 static inline int getNumCols()
 {
-    //TODO Implement code here
     return g_num_cols;
 }
 
 // Return delta
 static inline int getDelta()
 {
-	//TODO Implement code here
     return g_delta;
 }
 
 // Return number of wires
 static inline int getNumWires()
 {
-    //TODO Implement code here
-    return 0;
+    return g_num_wires;
 }
 
 // Get cost array entry
 static inline int getCost(int row, int col)
 {
-    //TODO Implement code here
-    return 0;
+    return costs[g_num_cols * row + col];
 }
 
 // Get a wire placement. Returns number of points (should be 2-4 for 0-2 bends).
-static inline int getWire(int wireIndex, int* x1, int* y1, int* x2, int* y2, int* x3, int* y3, int* x4, int* y4)
+static inline int getWire(int wireIndex, int* x1, int* y1, int* x2, int* y2, 
+                          int* x3, int* y3, int* x4, int* y4)
 {
-    //TODO Implement code here
-    return 2;
+    wire_t wire = wires[wireIndex];
+    *x1 = wire.x1;
+    *y1 = wire.y1;
+    if(wire.bend_x1 == -1 || wire.bend_y1 == -1) {
+        *x2 = wire.x2;
+        *y2 = wire.y2;
+        return 2;
+    } else if (wire.bend_x2 == -1 || wire.bend_y2 == -1) {
+        *x2 = wire.bend_x1;
+        *y2 = wire.bend_y1;
+        *x3 = wire.x2;
+        *y3 = wire.y2;
+        return 3;
+    } else {
+        *x2 = wire.bend_x1;
+        *y2 = wire.bend_y1;
+        *x3 = wire.bend_x2;
+        *y3 = wire.bend_y2;
+        *x4 = wire.x2;
+        *y4 = wire.y2;
+        return 4;
+    }
 }
 
 // Perform computation, including reading/writing output files
-void compute(int procID, int nproc, char* inputFilename, double prob, int numIterations)
+void compute(int procID, int nproc, char* inputFilename, double prob, 
+             int numIterations)
 {
     readInput(inputFilename);
     //TODO Implement code here
