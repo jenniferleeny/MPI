@@ -6,6 +6,7 @@
 #include <stdbool.h>
 #include <limits.h>
 #include <time.h>
+#include <math.h>
 #include "mpi.h"
 #include "wire_route.h"
 
@@ -248,8 +249,8 @@ cost_t find_wire_cost(wire_t wire) {
 
 
 void change_wire_route(wire_t wire, int increment) {
-    printf("wire: %d %d %d %d\n", wire.x1, wire.y1, wire.x2, wire.y2);
-    printf("bend: %d %d %d %d\n", wire.bend_x1, wire.bend_y1, wire.bend_x2, wire.bend_y2);
+    // printf("wire: %d %d %d %d\n", wire.x1, wire.y1, wire.x2, wire.y2);
+    // printf("bend: %d %d %d %d\n", wire.bend_x1, wire.bend_y1, wire.bend_x2, wire.bend_y2);
     if (wire.bend_x1 == -1 && wire.bend_y1 == -1) {
         change_wire_route_helper(wire.x1, wire.y1, wire.x2, 
             wire.y2, increment);
@@ -270,48 +271,47 @@ void change_wire_route(wire_t wire, int increment) {
     costs[wire.y2 * g_num_cols + wire.x2] += increment; 
 }
 
-void anneal(wire_t *og_wire) {
-    wire_t wire = *og_wire;
-    if (wire.cost != -1)
-        change_wire_route(wire, -1);
-    int dx = abs(wire.x2 - wire.x1) + 1;
-    int dy = abs(wire.y2 - wire.y1) + 1;
+void anneal(wire_t *wire) {
+    if (wire->cost != -1)
+        change_wire_route(*wire, -1);
+    int dx = abs(wire->x2 - wire->x1) + 1;
+    int dy = abs(wire->y2 - wire->y1) + 1;
     int random_index = rand() % (dx + dy);
-    if (random_index <= dx) {
+    if (random_index < dx) {
         // this will be a 'vertical' path
         if (random_index == 0) {
-            wire.bend_x1 = wire.x1;
-            wire.bend_y1 = wire.y2;
-            wire.bend_x2 = -1;
-            wire.bend_y2 = -1;
+            wire->bend_x1 = wire->x1;
+            wire->bend_y1 = wire->y2;
+            wire->bend_x2 = -1;
+            wire->bend_y2 = -1;
         }
         else {
-            int dir = (wire.x2 - wire.x1) / dx;
-            wire.bend_x1 = wire.x1 + dir * (random_index);
-            wire.bend_y1 = wire.y1;
-            wire.bend_x2 = wire.bend_x1 == wire.x2 ? -1 : wire.bend_x1;
-            wire.bend_y2 = wire.bend_x1 == wire.x2 ? -1 : wire.y2;
+            int dir = ceil((double)(wire->x2 - wire->x1) / dx);
+            wire->bend_x1 = wire->x1 + dir * (random_index);
+            wire->bend_y1 = wire->y1;
+            wire->bend_x2 = wire->bend_x1 == wire->x2 ? -1 : wire->bend_x1;
+            wire->bend_y2 = wire->bend_x1 == wire->x2 ? -1 : wire->y2;
         }
     }
     else {
         // this will be a 'horizontal' path
         random_index -= dx;
         if (random_index == 0) {
-            wire.bend_x1 = wire.x2;
-            wire.bend_y1 = wire.y1;
-            wire.bend_x2 = -1;
-            wire.bend_y2 = -1;
+            wire->bend_x1 = wire->x2;
+            wire->bend_y1 = wire->y1;
+            wire->bend_x2 = -1;
+            wire->bend_y2 = -1;
         }
         else {
-            int dir = (wire.y2 - wire.y1) / dy;
-            wire.bend_x1 = wire.x1;
-            wire.bend_y1 = wire.y1 + dir * (random_index + 1);
-            wire.bend_x2 = wire.bend_y1 == wire.y2 ? -1 : wire.x2;
-            wire.bend_y2 = wire.bend_y1 == wire.y2 ? -1 : wire.bend_y1;
+            int dir = ceil((double)(wire->y2 - wire->y1) / dy);
+            wire->bend_x1 = wire->x1;
+            wire->bend_y1 = wire->y1 + dir * random_index;
+            wire->bend_x2 = wire->bend_y1 == wire->y2 ? -1 : wire->x2;
+            wire->bend_y2 = wire->bend_y1 == wire->y2 ? -1 : wire->bend_y1;
         }
     }
-    wire.cost = 2;
-    change_wire_route(wire, 1);
+    wire->cost = 2;
+    change_wire_route(*wire, 1);
 }
 
 // returns whether the pair x is better than the pair y, assuming the pairs 
@@ -323,11 +323,11 @@ bool better_than(pair_t x, pair_t y) {
 // find_mind_path_cost: takes in (wire.x1, wire.y1) to (wire.x2, wire.y2) and 
 // adds the wire route to costs
 void find_min_path(wire_t *wire, double anneal_prob) {
-    /*double prob_sample = ((double)rand()) / ((double)RAND_MAX);
+    double prob_sample = ((double)rand()) / ((double)RAND_MAX);
     if (prob_sample < anneal_prob) {
         anneal(wire);
         return;
-    }*/
+    }
     int x1, x2, y1, y2;
     if (wire->x1 <= wire->x2) {
         x1 = wire->x1;
@@ -538,9 +538,6 @@ void compute(int procID, int nproc, char* inputFilename, double prob,
     readInput(inputFilename);
     //TODO: initialize all the wires on the board
     wire_routing(prob); 
-    printf("%d\n", __LINE__);
-    
-
 
     //TODO Implement code here
     //TODO Decide which processors should be reading/writing files
