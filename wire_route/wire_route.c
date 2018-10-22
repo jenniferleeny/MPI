@@ -3,6 +3,9 @@
 #include <string.h>
 #include <libgen.h>
 #include <assert.h>
+#include <stdbool.h>
+#include <limits.h>
+#include <time.h>
 #include "mpi.h"
 #include "wire_route.h"
 
@@ -39,9 +42,9 @@ void print(cost_t *array, int rows, int cols) {
     printf("\n");
 }
 
-cost_t costs_max_overlap(int num) {
+cost_t costs_max_overlap() {
     cost_t max_cost = 0;
-    for (int i = 0; i < num; i++) {
+    for (int i = 0; i < g_num_cols * g_num_rows; i++) {
         max_cost = max(max_cost, costs[i]);
     }
     return max_cost;
@@ -62,7 +65,7 @@ pair_t find_score_h(int i, int x1, int y1, int x2, int y2) {
                 max_cost = max(max_cost, cost);
                 agg_cost += cost;
             }
-            if (y <= y2) {
+            if (j <= y2) {
                 cost_t cost = 1 + costs[g_num_cols*j+x2];
                 max_cost = max(max_cost, cost);
                 agg_cost += cost;
@@ -212,10 +215,41 @@ void change_wire_route_helper(int x1, int y1, int x2, int y2,
     }
 }
 
+cost_t find_wire_cost_helper(int x1, int y1, int x2, int y2) {
+    cost_t cost = 0;
+    if (y1 == y2) {
+        for (int i = min(x1, x2); i < max(x1, x2); i++) {
+            cost += costs[y1 * g_num_cols + i];
+        }
+    } else {
+        for (int i = min(y1, y2); i < max(y1, y2); i++) {
+            cost += costs[i * g_num_cols + x1];
+        }
+    }
+    return cost;
+} 
+
+cost_t find_wire_cost(wire_t wire) {
+    cost_t cost = find_wire_cost_helper(wire.x1, wire.y1, 
+                        wire.bend_x1, wire.bend_y1);
+    if (wire.bend_y2 >= 0 && wire.bend_x2 >= 0) {
+        cost += find_wire_cost_helper(wire.bend_x1, wire.bend_y1,
+                        wire.bend_x2, wire.bend_y2);
+        cost += find_wire_cost_helper(wire.bend_x2, wire.bend_y2,
+                        wire.x2, wire.y2);
+    } else {
+        cost += find_wire_cost_helper(wire.bend_x1, wire.bend_y1,
+                        wire.x2, wire.y2);
+    }
+    cost += costs[wire.y2 * g_num_cols + wire.x2]; 
+    return cost;
+}
+
+
 void change_wire_route(wire_t wire, int increment) {
     if (wire.bend_x1 == -1 && wire.bend_y1 == -1) {
         change_wire_route_helper(wire.x1, wire.y1, wire.x2, 
-            wire.y2, g_num_cols, g_num_rows, increment);
+            wire.y2, increment);
         costs[wire.y2 * g_num_cols + wire.x2] += increment; 
         return;
     }
@@ -233,7 +267,8 @@ void change_wire_route(wire_t wire, int increment) {
     costs[wire.y2 * g_num_cols + wire.x2] += increment; 
 }
 
-void anneal(wire_t *wire) {
+void anneal(wire_t *og_wire) {
+    wire_t wire = *og_wire;
     if (wire.cost != -1)
         change_wire_route(wire, -1);
     int dx = abs(wire.x2 - wire.x1) + 1;
@@ -287,9 +322,7 @@ bool better_than(pair_t x, pair_t y) {
 void find_min_path(wire_t *wire, double anneal_prob,
                    int *horizontal, int *vertical, int *max_overlap_horiz, 
                    int *max_overlap_vert) {
-
-    double prob_sample = static_cast<double>(rand()) / 
-                         static_cast<double>(RAND_MAX);
+    double prob_sample = ((double)rand()) / ((double)RAND_MAX);
     if (prob_sample < anneal_prob) {
         anneal(wire);
         return;
@@ -320,7 +353,7 @@ void find_min_path(wire_t *wire, double anneal_prob,
         y_max = y2;
     }
     if (wire->cost != -1) { 
-        wire->cost = find_wire_cost(costs, *wire);
+        wire->cost = find_wire_cost(*wire);
         change_wire_route(*wire, -1);
     }
     
@@ -336,7 +369,7 @@ void find_min_path(wire_t *wire, double anneal_prob,
     int new_bendy2 = -1;
 
     // find optimal wire route
-    pair_t best_score 
+    pair_t best_score;
     best_score.first = INT_MAX;
     best_score.second = INT_MAX;
 
@@ -349,15 +382,15 @@ void find_min_path(wire_t *wire, double anneal_prob,
             new_bendy1 = -1;
             new_bendx2 = -1;
             new_bendy2 = -1;
-            if ( !(wire.y1 == wire.y2 && i == wire.y1) ) {
+            if ( !(wire->y1 == wire->y2 && i == wire->y1) ) {
                 new_bendy1 = i;
-                if (i == wire.y1) {
-                    new_bendx1 = wire.x2;
+                if (i == wire->y1) {
+                    new_bendx1 = wire->x2;
                 } else {
                     // if horizontal segment aligns w/ y2 or != y1
-                    new_bendx1 = wire.x1;
-                } if (i != wire.y1 && i != wire.y2) {
-                    new_bendx2 = wire.x2;
+                    new_bendx1 = wire->x1;
+                } if (i != wire->y1 && i != wire->y2) {
+                    new_bendx2 = wire->x2;
                     new_bendy2 = i;
                 }
             }
@@ -372,27 +405,27 @@ void find_min_path(wire_t *wire, double anneal_prob,
             new_bendy1 = -1;
             new_bendx2 = -1;
             new_bendy2 = -1;
-            if ( !(wire.x1 == wire.x2 && i == wire.x1) ) {
+            if ( !(wire->x1 == wire->x2 && i == wire->x1) ) {
                 // if horizontal segment is align y1
                 new_bendx1 = i;
-                if (i == wire.x1) {
-                    new_bendy1 = wire.y2;
+                if (i == wire->x1) {
+                    new_bendy1 = wire->y2;
                 } else {
                     // if horizontal segment aligns w/ y2 or != y1
-                    new_bendy1 = wire.y1;
-                } if (i != wire.x1 && i != wire.x2) {
+                    new_bendy1 = wire->y1;
+                } if (i != wire->x1 && i != wire->x2) {
                     new_bendx2 = i;
-                    new_bendy2 = wire.y2;
+                    new_bendy2 = wire->y2;
                 }
             }
         }
     }
 
-    wire.bend_x1 = new_bendx1;
-    wire.bend_y1 = new_bendy1;
-    wire.bend_x2 = new_bendx2;
-    wire.bend_y2 = new_bendy2;
-    wire.cost = best_score.second;
+    wire->bend_x1 = new_bendx1;
+    wire->bend_y1 = new_bendy1;
+    wire->bend_x2 = new_bendx2;
+    wire->bend_y2 = new_bendy2;
+    wire->cost = best_score.second;
 
     change_wire_route(*wire, 1);
 }
@@ -400,6 +433,8 @@ void find_min_path(wire_t *wire, double anneal_prob,
 // Initialize problem
 static inline void init(int numRows, int numCols, int delta, int numWires)
 {
+    // only initialize random seed once
+    srand(time(NULL));
     g_num_rows = numRows;
     g_num_cols = numCols;
     g_delta = delta;
@@ -485,49 +520,6 @@ static inline int getWire(int wireIndex, int* x1, int* y1, int* x2, int* y2,
     }
 }
 
-
-static inline void find_min_path(wire_t wire, double anneal_prob, 
-        int *horizontal, int *vertical, int *max_overlap_horiz, 
-        int *max_overlap_vert) {
-    int x1, x2, y1, y2;
-    if (wire.x1 <= wire.x2) {
-        x1 = wire.x1;
-        y1 = wire.y1;
-        x2 = wire.x2;
-        y2 = wire.y2;
-    } else {
-        x1 = wire.x2;
-        y1 = wire.y2;
-        x2 = wire.x1;
-        y2 = wire.y1;
-    }
-    int x_max = min(g_num_cols-1, (int)(g_delta/2) + x2);
-    int x_min = max(0, x1 - (int)(g_delta/2));
-    int y_max = min(g_num_rows-1, (int)(g_delta/2) + max(y1, y2));
-    int y_min = max(0, min(y1, y2) - (int)(g_delta/2));
-    if (wire.y1 == wire.y2) {
-        x_min = x1;
-        x_max = x2;
-    }   
-    if (wire.x1 == wire.x2) {
-        y_min = y1;
-        y_max = y2;
-    }
-    if (wire.cost != -1) { 
-        wire.cost = find_wire_cost(wire);
-        change_wire_route(wire, -1);
-    }
-    memset(horizontal, 0, sizeof(cost_t) * g_num_rows);
-    memset(vertical, 0, sizeof(cost_t) * g_num_cols);
-    memset(max_overlap_horiz, 0, sizeof(cost_t) * g_num_rows);
-    memset(max_overlap_vert, 0, sizeof(cost_t) * g_num_cols);
-    int i;
-    for (i = y_min; i <= y_max; i++) {
-        create_vert_horiz(i, wire, horizontal, vertical, 
-                 max_overlap_horiz, max_overlap_vert);
-    }
-}
-
 static inline void wire_routing(double anneal_prob, int *horizontal, int *vertical,
                                 int *max_overlap_horiz, int *max_overlap_vert) {
     int world_rank;
@@ -535,8 +527,8 @@ static inline void wire_routing(double anneal_prob, int *horizontal, int *vertic
     int world_size;
     MPI_Comm_size(MPI_COMM_WORLD,&world_size);
     for (int i = 0; i < g_num_wires; i++) {
-        find_min_path(&wires[i], anneal_prob, int *horizontal, int *vertical,
-                                int *max_overlap_horiz, int *max_overlap_vert);    
+        find_min_path(&wires[i], anneal_prob, horizontal, vertical,
+                                max_overlap_horiz, max_overlap_vert);    
     }
 }
 
