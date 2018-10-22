@@ -15,12 +15,386 @@ cost_t *costs = NULL;
 cost_t *path_costs = NULL;
 cost_t *temp_path_costs = NULL;
 
-cost_t max(cost_t x, cost_t y) {
+typedef struct
+{
+    int first;
+    int second;
+} pair_t;
+
+
+int max(int x, int y) {
     return x > y ? x : y;
 }
 
-cost_t min(cost_t x, cost_t y) {
+int min(int x, int y) {
     return x < y ? x : y;
+}
+
+void print(cost_t *array, int rows, int cols) {
+    for (int i = 0; i < rows; i++) {
+        for (int j = 0; j < cols; j++)  
+            printf("%d ", array[i*cols + j]);
+        printf("\n");
+    }
+    printf("\n");
+}
+
+cost_t costs_max_overlap(int num) {
+    cost_t max_cost = 0;
+    for (int i = 0; i < num; i++) {
+        max_cost = max(max_cost, costs[i]);
+    }
+    return max_cost;
+}
+
+pair_t find_score_h(int i, int x1, int y1, int x2, int y2) {
+    cost_t max_cost = 0;
+    cost_t agg_cost = 0;
+    for (int j = x1; j <= x2; j++) {
+        cost_t cost = 1 + costs[i*g_num_cols + j];
+        max_cost = max(max_cost, cost);
+        agg_cost += cost;
+    }
+    if (i < min(y1, y2)) {
+        for (int j = i+1; j <= max(y1, y2); j++) {
+            if (j <= y1) {
+                cost_t cost = 1 + costs[g_num_cols*j+x1];
+                max_cost = max(max_cost, cost);
+                agg_cost += cost;
+            }
+            if (y <= y2) {
+                cost_t cost = 1 + costs[g_num_cols*j+x2];
+                max_cost = max(max_cost, cost);
+                agg_cost += cost;
+            }
+        }  // check for double counting
+    } else if (i >= min(y1, y2) && i <= max(y1, y2)) {
+        for (int j = min(y1, y2); j < i; j++) {
+            // optimize this
+            if (y1 <= y2) {
+                cost_t cost = 1 + costs[g_num_cols*j+x1];
+                max_cost = max(max_cost, cost);
+                agg_cost += cost;
+            }
+            else if (y2 < y1) {
+                cost_t cost = 1 + costs[g_num_cols*j+x2];
+                max_cost = max(max_cost, cost);
+                agg_cost += cost;
+            }
+        }
+        for (int j = i+1; j <= max(y1, y2); j++) {
+            if (y1 >= y2) {
+                cost_t cost = 1 + costs[g_num_cols*j+x1];
+                max_cost = max(max_cost, cost);
+                agg_cost += cost;
+            }
+            else if (y1 < y2) {
+                cost_t cost = 1 + costs[g_num_cols*j+x2];
+                max_cost = max(max_cost, cost);
+                agg_cost += cost;
+            }
+        }
+    } else if (i > max(y1, y2)) {
+        for (int j = min(y1, y2); j < i; j++) {
+            if (j >= y1) {
+                cost_t cost = 1 + costs[g_num_cols*j+x1];
+                max_cost = max(max_cost, cost);
+                agg_cost += cost;
+            }
+            if (j >= y2) {
+                cost_t cost = 1 + costs[g_num_cols*j+x2];
+                max_cost = max(max_cost, cost);
+                agg_cost += cost;
+            }
+        }
+    }
+
+    pair_t result;
+    result.first = max_cost;
+    result.second = agg_cost;
+    return result;
+}
+
+pair_t find_score_v(int i, int x1, int y1, int x2, int y2) {
+    cost_t max_cost = 0;
+    cost_t agg_cost = 0;
+
+
+    for (int j = min(y1, y2); j <= max(y1, y2); j++) {
+        max_cost = max(max_cost, 1 + costs[j*g_num_cols + i]);
+    }
+    if (i < x1) {
+        for (int j = i+1; j <= x2; j++) {
+            if (j <= x1) {
+                cost_t cost = 1 + costs[g_num_cols * y1 + j];
+                max_cost = max(max_cost, cost);
+                agg_cost += cost;
+            }
+            if (j <= x2) {
+                cost_t cost = 1 + costs[g_num_cols * y2 + j];
+                max_cost = max(max_cost, cost);
+                agg_cost += cost;
+            }
+        }  // check for double counting
+    } else if (i >= x1 && i <= x2) {
+        for (int j = x1; j < i; j++) {
+            // TODO: optimize this
+            
+            if (y1 <= y2) {
+                cost_t cost = 1 + costs[g_num_cols * y1 + j];
+                max_cost = max(max_cost, cost);
+                agg_cost += cost;
+            }
+            else if (y2 < y1) {
+                cost_t cost = 1 + costs[g_num_cols * y2 + j];
+                max_cost = max(max_cost, cost);
+                agg_cost += cost;
+            }
+        }
+        for (int j = i+1; j <= x2; j++) {
+            if (y1 >= y2) {
+                cost_t cost = 1 + costs[g_num_cols * y1 + j];
+                max_cost = max(max_cost, cost);
+                agg_cost += cost;
+            }
+            else if (y1 < y2) {
+                cost_t cost = 1 + costs[g_num_cols * y2 + j];
+                max_cost = max(max_cost, cost);
+                agg_cost += cost;
+            }
+        }
+    } else if (i > x2) {
+        for (int j = x1; j < i; j++) {
+            if (j >= x1) {
+                cost_t cost = 1 + costs[g_num_cols * y1 + j];
+                max_cost = max(max_cost, cost);
+                agg_cost += cost;
+            }
+            if (j >= x2) {
+                cost_t cost = 1 + costs[g_num_cols * y1 + j];
+                max_cost = max(max_cost, cost);
+                agg_cost += cost;
+            }
+        }
+    }
+
+    pair_t result;
+    result.first = max_cost;
+    result.second = agg_cost;
+    return result;
+}
+
+void change_wire_route_helper(int x1, int y1, int x2, int y2,
+                              int increment) {
+    if (x1 == x2 && y1 == y2)
+        return; 
+    if (y1 == y2) {
+        if (x1 <= x2) {
+            for (int i = x1; i < x2; i++) {
+                costs[ y1 * g_num_cols + i] += increment;
+            }
+        } else {
+            for (int i = x1; i > x2; i-=1) {
+                costs[y1 * g_num_cols + i] += increment;
+            }
+        }
+    } else {
+        if (y1 <= y2) {
+            for (int i = y1; i < y2; i++) {
+                costs[i * g_num_cols + x1] += increment;
+            }
+        } else {
+            for (int i = y1; i > y2; i--) {
+                costs[i * g_num_cols + x1] += increment;
+            }
+
+        }
+    }
+}
+
+void change_wire_route(wire_t wire, int increment) {
+    if (wire.bend_x1 == -1 && wire.bend_y1 == -1) {
+        change_wire_route_helper(wire.x1, wire.y1, wire.x2, 
+            wire.y2, g_num_cols, g_num_rows, increment);
+        costs[wire.y2 * g_num_cols + wire.x2] += increment; 
+        return;
+    }
+    change_wire_route_helper(wire.x1, wire.y1, wire.bend_x1, wire.bend_y1,
+                             increment);
+    if (wire.bend_y2 >= 0 && wire.bend_x2 >= 0) {
+        change_wire_route_helper(wire.bend_x1, wire.bend_y1,
+                        wire.bend_x2, wire.bend_y2, increment);
+        change_wire_route_helper(wire.bend_x2, wire.bend_y2,
+                        wire.x2, wire.y2, increment);
+    } else {
+        change_wire_route_helper(wire.bend_x1, wire.bend_y1,
+                        wire.x2, wire.y2, increment);
+    }
+    costs[wire.y2 * g_num_cols + wire.x2] += increment; 
+}
+
+void anneal(wire_t *wire) {
+    if (wire.cost != -1)
+        change_wire_route(wire, -1);
+    int dx = abs(wire.x2 - wire.x1) + 1;
+    int dy = abs(wire.y2 - wire.y1) + 1;
+    int random_index = rand() % (dx + dy);
+    if (random_index <= dx) {
+        // this will be a 'vertical' path
+        if (random_index == 0) {
+            wire.bend_x1 = wire.x1;
+            wire.bend_y1 = wire.y2;
+            wire.bend_x2 = -1;
+            wire.bend_y2 = -1;
+        }
+        else {
+            int dir = (wire.x2 - wire.x1) / dx;
+            wire.bend_x1 = wire.x1 + dir * (random_index);
+            wire.bend_y1 = wire.y1;
+            wire.bend_x2 = wire.bend_x1 == wire.x2 ? -1 : wire.bend_x1;
+            wire.bend_y2 = wire.bend_x1 == wire.x2 ? -1 : wire.y2;
+        }
+    }
+    else {
+        // this will be a 'horizontal' path
+        random_index -= dx;
+        if (random_index == 0) {
+            wire.bend_x1 = wire.x2;
+            wire.bend_y1 = wire.y1;
+            wire.bend_x2 = -1;
+            wire.bend_y2 = -1;
+        }
+        else {
+            int dir = (wire.y2 - wire.y1) / dy;
+            wire.bend_x1 = wire.x1;
+            wire.bend_y1 = wire.y1 + dir * (random_index + 1);
+            wire.bend_x2 = wire.bend_y1 == wire.y2 ? -1 : wire.x2;
+            wire.bend_y2 = wire.bend_y1 == wire.y2 ? -1 : wire.bend_y1;
+        }
+    }
+    wire.cost = 2;
+    change_wire_route(wire, 1);
+}
+
+// returns whether the pair x is better than the pair y, assuming the pairs 
+// reprsent a wire path cost of the form (max_cost, agg_cost)
+bool better_than(pair_t x, pair_t y) {
+    return x.first < y.first || (x.first == y.first && x.second < y.second);
+}
+
+// find_mind_path_cost: takes in (wire.x1, wire.y1) to (wire.x2, wire.y2) and 
+// adds the wire route to costs
+void find_min_path(wire_t *wire, double anneal_prob,
+                   int *horizontal, int *vertical, int *max_overlap_horiz, 
+                   int *max_overlap_vert) {
+
+    double prob_sample = static_cast<double>(rand()) / 
+                         static_cast<double>(RAND_MAX);
+    if (prob_sample < anneal_prob) {
+        anneal(wire);
+        return;
+    }
+
+    int x1, x2, y1, y2;
+    if (wire->x1 <= wire->x2) {
+        x1 = wire->x1;
+        y1 = wire->y1;
+        x2 = wire->x2;
+        y2 = wire->y2;
+    } else {
+        x1 = wire->x2;
+        y1 = wire->y2;
+        x2 = wire->x1;
+        y2 = wire->y1;
+    }
+    int x_max = min(g_num_cols-1, (int)(g_delta/2) + x2);
+    int x_min = max(0, x1 - (int)(g_delta/2));
+    int y_max = min(g_num_rows-1, (int)(g_delta/2) + max(y1, y2));
+    int y_min = max(0, min(y1, y2) - (int)(g_delta/2));
+    if (wire->y1 == wire->y2) {
+        x_min = x1;
+        x_max = x2;
+    }   
+    if (wire->x1 == wire->x2) {
+        y_min = y1;
+        y_max = y2;
+    }
+    if (wire->cost != -1) { 
+        wire->cost = find_wire_cost(costs, *wire);
+        change_wire_route(*wire, -1);
+    }
+    
+    // MAIN IDEA: 
+    // horizontal keeps track of the path cost of a wire route that has a 
+    // bend at row x
+    // vertical keeps track of the path cost of a wire route that has a bend 
+    // at column y
+   
+    int new_bendx1 = -1;
+    int new_bendy1 = -1;
+    int new_bendx2 = -1;
+    int new_bendy2 = -1;
+
+    // find optimal wire route
+    pair_t best_score 
+    best_score.first = INT_MAX;
+    best_score.second = INT_MAX;
+
+    for (int i = y_min; i <= y_max; i++) {
+        pair_t current_score = find_score_h(i, x1, y1, x2, y2);
+        if (better_than(current_score, best_score)) {
+            best_score = current_score;
+
+            new_bendx1 = -1;
+            new_bendy1 = -1;
+            new_bendx2 = -1;
+            new_bendy2 = -1;
+            if ( !(wire.y1 == wire.y2 && i == wire.y1) ) {
+                new_bendy1 = i;
+                if (i == wire.y1) {
+                    new_bendx1 = wire.x2;
+                } else {
+                    // if horizontal segment aligns w/ y2 or != y1
+                    new_bendx1 = wire.x1;
+                } if (i != wire.y1 && i != wire.y2) {
+                    new_bendx2 = wire.x2;
+                    new_bendy2 = i;
+                }
+            }
+        }
+    }   
+    for (int i = x_min; i < x_max; i++) {
+        pair_t current_score = find_score_v(i, x1, y1, x2, y2);
+        if (better_than(current_score, best_score)) {
+            best_score = current_score;
+
+            new_bendx1 = -1;
+            new_bendy1 = -1;
+            new_bendx2 = -1;
+            new_bendy2 = -1;
+            if ( !(wire.x1 == wire.x2 && i == wire.x1) ) {
+                // if horizontal segment is align y1
+                new_bendx1 = i;
+                if (i == wire.x1) {
+                    new_bendy1 = wire.y2;
+                } else {
+                    // if horizontal segment aligns w/ y2 or != y1
+                    new_bendy1 = wire.y1;
+                } if (i != wire.x1 && i != wire.x2) {
+                    new_bendx2 = i;
+                    new_bendy2 = wire.y2;
+                }
+            }
+        }
+    }
+
+    wire.bend_x1 = new_bendx1;
+    wire.bend_y1 = new_bendy1;
+    wire.bend_x2 = new_bendx2;
+    wire.bend_y2 = new_bendy2;
+    wire.cost = best_score.second;
+
+    change_wire_route(*wire, 1);
 }
 
 // Initialize problem
@@ -112,8 +486,9 @@ static inline int getWire(int wireIndex, int* x1, int* y1, int* x2, int* y2,
 }
 
 
-static inline void find_min_path(wire_t wire, double anneal_prob, int *horizontal,
-                int *vertical, int *max_overlap_horiz, int *max_overlap_vert) {
+static inline void find_min_path(wire_t wire, double anneal_prob, 
+        int *horizontal, int *vertical, int *max_overlap_horiz, 
+        int *max_overlap_vert) {
     int x1, x2, y1, y2;
     if (wire.x1 <= wire.x2) {
         x1 = wire.x1;
@@ -160,7 +535,7 @@ static inline void wire_routing(double anneal_prob, int *horizontal, int *vertic
     int world_size;
     MPI_Comm_size(MPI_COMM_WORLD,&world_size);
     for (int i = 0; i < g_num_wires; i++) {
-        find_min_path(wires[i], anneal_prob, int *horizontal, int *vertical,
+        find_min_path(&wires[i], anneal_prob, int *horizontal, int *vertical,
                                 int *max_overlap_horiz, int *max_overlap_vert);    
     }
 }
@@ -170,6 +545,12 @@ void compute(int procID, int nproc, char* inputFilename, double prob,
              int numIterations)
 {
     readInput(inputFilename);
+    //TODO: initialize all the wires on the board
+    
+
+
+
+
     //TODO Implement code here
     //TODO Decide which processors should be reading/writing files
     writeCost(inputFilename, nproc);
