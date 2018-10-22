@@ -9,6 +9,7 @@
 #include "mpi.h"
 #include "wire_route.h"
 
+//global variables
 static int g_num_rows = 0;
 static int g_num_cols = 0;
 static int g_delta = 0;
@@ -247,6 +248,8 @@ cost_t find_wire_cost(wire_t wire) {
 
 
 void change_wire_route(wire_t wire, int increment) {
+    printf("wire: %d %d %d %d\n", wire.x1, wire.y1, wire.x2, wire.y2);
+    printf("bend: %d %d %d %d\n", wire.bend_x1, wire.bend_y1, wire.bend_x2, wire.bend_y2);
     if (wire.bend_x1 == -1 && wire.bend_y1 == -1) {
         change_wire_route_helper(wire.x1, wire.y1, wire.x2, 
             wire.y2, increment);
@@ -319,15 +322,12 @@ bool better_than(pair_t x, pair_t y) {
 
 // find_mind_path_cost: takes in (wire.x1, wire.y1) to (wire.x2, wire.y2) and 
 // adds the wire route to costs
-void find_min_path(wire_t *wire, double anneal_prob,
-                   int *horizontal, int *vertical, int *max_overlap_horiz, 
-                   int *max_overlap_vert) {
-    double prob_sample = ((double)rand()) / ((double)RAND_MAX);
+void find_min_path(wire_t *wire, double anneal_prob) {
+    /*double prob_sample = ((double)rand()) / ((double)RAND_MAX);
     if (prob_sample < anneal_prob) {
         anneal(wire);
         return;
-    }
-
+    }*/
     int x1, x2, y1, y2;
     if (wire->x1 <= wire->x2) {
         x1 = wire->x1;
@@ -340,6 +340,7 @@ void find_min_path(wire_t *wire, double anneal_prob,
         x2 = wire->x1;
         y2 = wire->y1;
     }
+    // printf("wire: %d %d %d %d\n", x1, y1, x2, y2);
     int x_max = min(g_num_cols-1, (int)(g_delta/2) + x2);
     int x_min = max(0, x1 - (int)(g_delta/2));
     int y_max = min(g_num_rows-1, (int)(g_delta/2) + max(y1, y2));
@@ -426,7 +427,7 @@ void find_min_path(wire_t *wire, double anneal_prob,
     wire->bend_x2 = new_bendx2;
     wire->bend_y2 = new_bendy2;
     wire->cost = best_score.second;
-
+    // printf("bends: %d %d %d %d\n", new_bendx1, new_bendy1, new_bendx2, new_bendy2);
     change_wire_route(*wire, 1);
 }
 
@@ -520,15 +521,13 @@ static inline int getWire(int wireIndex, int* x1, int* y1, int* x2, int* y2,
     }
 }
 
-static inline void wire_routing(double anneal_prob, int *horizontal, int *vertical,
-                                int *max_overlap_horiz, int *max_overlap_vert) {
+static inline void wire_routing(double anneal_prob) {
     int world_rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
     int world_size;
     MPI_Comm_size(MPI_COMM_WORLD,&world_size);
     for (int i = 0; i < g_num_wires; i++) {
-        find_min_path(&wires[i], anneal_prob, horizontal, vertical,
-                                max_overlap_horiz, max_overlap_vert);    
+        find_min_path(&wires[i], anneal_prob);
     }
 }
 
@@ -538,9 +537,9 @@ void compute(int procID, int nproc, char* inputFilename, double prob,
 {
     readInput(inputFilename);
     //TODO: initialize all the wires on the board
+    wire_routing(prob); 
+    printf("%d\n", __LINE__);
     
-
-
 
 
     //TODO Implement code here
