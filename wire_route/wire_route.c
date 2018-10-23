@@ -24,6 +24,15 @@ typedef struct
     int second;
 } pair_t;
 
+// returns whether the pair x is better than the pair y, assuming the pairs 
+// reprsent a wire path cost of the form (max_cost, agg_cost)
+bool better_than(pair_t x, pair_t y) {
+    return x.first < y.first || (x.first == y.first && x.second < y.second);
+}
+
+bool worse_than_equal_to(pair_t x, pair_t y) {
+    return x.first > y.first || (x.first == y.first && x.second >= y.second);
+}
 
 int max(int x, int y) {
     return x > y ? x : y;
@@ -58,71 +67,88 @@ cost_t costs_agg_overlap() {
     return agg_cost;
 }
 
-pair_t find_score_h(int i, int x1, int y1, int x2, int y2) {
-    cost_t max_cost = 0;
-    cost_t agg_cost = 0;
+pair_t find_score_h(int i, int x1, int y1, int x2, int y2, pair_t best) {
+    pair_t result;
+    result.first = 0;
+    result.second = 0;
 
-    int dir = y1 < i ? 1 : -1;
-    for (int y = y1; y != i; y += dir) {
-        cost_t cost = 1 + costs[g_num_cols * y + x1];
-        max_cost = max(max_cost, cost);
-        agg_cost += cost;
-    }
-    
-    dir = x1 < x2 ? 1 : -1;
+    int dir = x1 < x2 ? 1 : -1;
     for (int x = x1; x != x2; x += dir) {
         cost_t cost = 1 + costs[g_num_cols * i + x];
-        max_cost = max(max_cost, cost);
-        agg_cost += cost;      
+        result.first = max(result.first, cost);
+        result.second += cost;
+    }
+    if (worse_than_equal_to(result, best)) {
+        return result;
     }
 
+
+
+    dir = y1 < i ? 1 : -1;
+    for (int y = y1; y != i; y += dir) {
+        cost_t cost = 1 + costs[g_num_cols * y + x1];
+        result.first = max(result.first, cost);
+        result.second += cost;
+
+        if (worse_than_equal_to(result, best)) {
+            return result;
+        }
+    }
+    
     dir = i < y2 ? 1 : -1;
     for (int y = i; y != y2; y += dir) {
         cost_t cost = 1 + costs[g_num_cols * y + x2];
-        max_cost = max(max_cost, cost);
-        agg_cost += cost;
+        result.first = max(result.first, cost);
+        result.second += cost;
+
+        if (worse_than_equal_to(result, best)) {
+            return result;
+        }
     }
     cost_t cost = 1 + costs[g_num_cols * y2 + x2];
-    max_cost = max(max_cost, cost);
-    agg_cost += cost;
+    result.first = max(result.first, cost);
+    result.second += cost;
 
-    pair_t result;
-    result.first = max_cost;
-    result.second = agg_cost;
     return result;
 }
 
-pair_t find_score_v(int i, int x1, int y1, int x2, int y2) {
-    cost_t max_cost = 0;
-    cost_t agg_cost = 0;
+pair_t find_score_v(int i, int x1, int y1, int x2, int y2, pair_t best) {
+    pair_t result;
+    result.first = 0;
+    result.second = 0;
 
     int dir = x1 < i ? 1 : -1;
     for (int x = x1; x != i; x += dir) {
         cost_t cost = 1 + costs[g_num_cols * y1 + x];
-        max_cost = max(max_cost, cost);
-        agg_cost += cost;
+        result.first = max(result.first, cost);
+        result.second += cost;
     }
-    
-    dir = y1 < y2 ? 1 : -1;
-    for (int y = y1; y != y2; y += dir) {
-        cost_t cost = 1 + costs[g_num_cols * y + i];
-        max_cost = max(max_cost, cost);
-        agg_cost += cost;      
+
+    if (worse_than_equal_to(result, best)) {
+        return result;
     }
 
     dir = i < x2 ? 1 : -1;
     for (int x = i; x != x2; x += dir) {
         cost_t cost = 1 + costs[g_num_cols * y2 + x];
-        max_cost = max(max_cost, cost);
-        agg_cost += cost;
+        result.first = max(result.first, cost);
+        result.second += cost;
     }
     cost_t cost = 1 + costs[g_num_cols * y2 + x2];
-    max_cost = max(max_cost, cost);
-    agg_cost += cost;
+    result.first = max(result.first, cost);
+    result.second += cost;
 
-    pair_t result;
-    result.first = max_cost;
-    result.second = agg_cost;
+    dir = y1 < y2 ? 1 : -1;
+    for (int y = y1; y != y2; y += dir) {
+        cost_t cost = 1 + costs[g_num_cols * y + i];
+        result.first = max(result.first, cost);
+        result.second += cost;
+
+        if (worse_than_equal_to(result, best)) {
+            return result;
+        }
+    }
+
     return result;
 }
 
@@ -215,16 +241,6 @@ void anneal(wire_t *wire) {
     }
 }
 
-// returns whether the pair x is better than the pair y, assuming the pairs 
-// reprsent a wire path cost of the form (max_cost, agg_cost)
-bool better_than(pair_t x, pair_t y) {
-    return x.first < y.first || (x.first == y.first && x.second < y.second);
-}
-
-bool worse_than_equal_to(pair_t x, pair_t y) {
-    return x.first > y.first || (x.first == y.first && x.second >= y.second);
-}
-
 // find_mind_path_cost: takes in (wire.x1, wire.y1) to (wire.x2, wire.y2) and 
 // adds the wire route to costs
 void find_min_path(wire_t *wire, double anneal_prob) {
@@ -281,7 +297,7 @@ void find_min_path(wire_t *wire, double anneal_prob) {
     best_score.second = INT_MAX;
 
     for (int i = y_min; i <= y_max; i++) {
-        pair_t current_score = find_score_h(i, x1, y1, x2, y2);
+        pair_t current_score = find_score_h(i, x1, y1, x2, y2, best_score);
         if (better_than(current_score, best_score)) {
             best_score = current_score;
 
@@ -302,9 +318,9 @@ void find_min_path(wire_t *wire, double anneal_prob) {
                 }
             }
         }
-    }   
+    }
     for (int i = x_min; i < x_max; i++) {
-        pair_t current_score = find_score_v(i, x1, y1, x2, y2);
+        pair_t current_score = find_score_v(i, x1, y1, x2, y2, best_score);
         if (better_than(current_score, best_score)) {
             best_score = current_score;
 
@@ -327,6 +343,7 @@ void find_min_path(wire_t *wire, double anneal_prob) {
             }
         }
     }
+
 
     wire->bend_x1 = new_bendx1;
     wire->bend_y1 = new_bendy1;
