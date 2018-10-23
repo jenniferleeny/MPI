@@ -244,14 +244,19 @@ void anneal(wire_t *wire) {
 // find_mind_path_cost: takes in (wire.x1, wire.y1) to (wire.x2, wire.y2) and 
 // adds the wire route to costs
 void find_min_path(wire_t *wire, double anneal_prob) {
-    double prob_sample = ((double)rand()) / ((double)RAND_MAX);
+    /*double prob_sample = ((double)rand()) / ((double)RAND_MAX);
     if (prob_sample < anneal_prob) {
         change_wire_route(*wire, -1);
         anneal(wire);
         change_wire_route(*wire, 1);
         return;
-    }
+    }*/
+    int world_rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
+    int world_size;
+    MPI_Comm_size(MPI_COMM_WORLD,&world_size);
     int x1, x2, y1, y2;
+    
     if (wire->x1 <= wire->x2) {
         x1 = wire->x1;
         y1 = wire->y1;
@@ -278,8 +283,10 @@ void find_min_path(wire_t *wire, double anneal_prob) {
     }
 
     change_wire_route(*wire, -1);
-
-    
+    //printf("%d %d %d %d\n", wire->bend_x1, wire->bend_y1, wire->bend_x2,
+    //        wire->bend_y2);
+    // print(costs, g_num_rows, g_num_cols);
+   
     // MAIN IDEA: 
     // horizontal keeps track of the path cost of a wire route that has a 
     // bend at row x
@@ -295,61 +302,114 @@ void find_min_path(wire_t *wire, double anneal_prob) {
     pair_t best_score;
     best_score.first = INT_MAX;
     best_score.second = INT_MAX;
+    
+    int flag = 0;
+    int index = -1;
 
-    for (int i = y_min; i <= y_max; i++) {
+    double frac1 = (double)world_rank / (double)world_size;
+    double frac2 = (double)(world_rank+1) / (double)world_size;
+
+    int y_start = y_min + ceil(frac1 * (double)(y_max - y_min));
+    int y_end = y_min + ceil(frac2 * (double)(y_max - y_min));
+    // horizontal
+    for (int i = y_start; i <= y_end; i++) {
         pair_t current_score = find_score_h(i, x1, y1, x2, y2, best_score);
         if (better_than(current_score, best_score)) {
+            index = i; 
             best_score = current_score;
-
-            new_bendx1 = -1;
-            new_bendy1 = -1;
-            new_bendx2 = -1;
-            new_bendy2 = -1;
-            if ( !(wire->y1 == wire->y2 && i == wire->y1) ) {
-                new_bendy1 = i;
-                if (i == wire->y1) {
-                    new_bendx1 = wire->x2;
-                } else {
-                    // if horizontal segment aligns w/ y2 or != y1
-                    new_bendx1 = wire->x1;
-                } if (i != wire->y1 && i != wire->y2) {
-                    new_bendx2 = wire->x2;
-                    new_bendy2 = i;
-                }
-            }
         }
     }
-    for (int i = x_min; i < x_max; i++) {
+    int x_start = x_min + ceil(frac1 * (double)(x_max - x_min ));
+    int x_end = x_min + ceil(frac2 * (double)(x_max - x_min ));
+
+   for (int i = x_start; i < x_end; i++) {
         pair_t current_score = find_score_v(i, x1, y1, x2, y2, best_score);
         if (better_than(current_score, best_score)) {
             best_score = current_score;
+            flag = 1;
+            index = i;
+        }
+    }
+    // printf("%d %d %d %d\n", wire->x1, wire->y1, wire->x2, wire->y2);
+    // printf("y: %d %d x: %d %d, score %d, flag %d, index %d\n", y_start, y_end,
+            // x_start, x_end, best_score.first, flag, index);
 
-            new_bendx1 = -1;
-            new_bendy1 = -1;
-            new_bendx2 = -1;
-            new_bendy2 = -1;
-            if ( !(wire->x1 == wire->x2 && i == wire->x1) ) {
-                // if horizontal segment is align y1
-                new_bendx1 = i;
-                if (i == wire->x1) {
+    // send data to master process
+    int num = 4;
+    int temp[num];
+    temp[0] = best_score.first;
+    temp[1] = best_score.second;
+    temp[2] = flag;
+    temp[3] = index;
+    MPI_Send(&temp, num, MPI_INT, 0, 0, MPI_COMM_WORLD);
+    // gather data to master process
+    int *buffer = NULL;
+    if (world_rank == 0) {
+        buffer = malloc(sizeof(int) * num * world_size);
+    }   
+    MPI_Gather(&temp, num, MPI_INT, buffer, num, MPI_INT, 0, MPI_COMM_WORLD);
+    if (world_rank == 0) {
+        /*for (int i = 0; i < world_size; i++) {
+            for (int j = 0; j < num; j++) {
+                printf("%d ", buffer[num*i + j]);
+            }
+            printf("\n");
+        }*/
+        int best = INT_MAX;
+        int agg = INT_MAX;
+        int final_flag = -1;
+        int final_ind = -1;
+        for (int i = 0; i < num*world_size; i+=4) {
+            if (best > buffer[i]) {
+                best = buffer[i];
+                agg = buffer[i+1];
+                final_flag = buffer[i+2];
+                final_ind = buffer[i+3];
+            } else if (best == buffer[i] && agg > buffer[i+1]) {
+                best = buffer[i];
+                agg = buffer[i+1];
+                final_flag = buffer[i+2];
+                final_ind = buffer[i+3];
+            }
+        }
+        printf("%d %d\n", final_ind, final_flag);
+
+        if (final_flag) { // vertical
+            if ( !(wire->x1 == wire->x2 && final_ind == wire->x1) ) {
+                new_bendx1 = final_ind;
+                if (final_ind == wire->x1) {
                     new_bendy1 = wire->y2;
                 } else {
                     // if horizontal segment aligns w/ y2 or != y1
                     new_bendy1 = wire->y1;
-                } if (i != wire->x1 && i != wire->x2) {
-                    new_bendx2 = i;
+                } if (final_ind != wire->x1 && final_ind != wire->x2) {
                     new_bendy2 = wire->y2;
+                    new_bendx2 = final_ind;
+                }
+            }
+        } else {
+            if ( !(wire->y1 == wire->y2 && final_ind == wire->y1) ) {
+                // if horizontal segment is align y1
+                new_bendy1 = final_ind;
+                if (final_ind == wire->y1) {
+                    new_bendx1 = wire->x2;
+                } else {
+                    // if horizontal segment aligns w/ y2 or != y1
+                    new_bendx1 = wire->x1;
+                } if (final_ind != wire->y1 && final_ind != wire->y2) {
+                    new_bendy2 = final_ind;
+                    new_bendx2 = wire->x2;
                 }
             }
         }
+        wire->bend_x1 = new_bendx1;
+        wire->bend_y1 = new_bendy1;
+        wire->bend_x2 = new_bendx2;
+        wire->bend_y2 = new_bendy2;
+        // printf("%d %d %d %d\n", wire->x1, wire->y1, wire->x2, wire->y2);
+        // printf("%d %d %d %d\n", new_bendx1, new_bendy1, new_bendx2, new_bendy2);
+        change_wire_route(*wire, 1);
     }
-
-
-    wire->bend_x1 = new_bendx1;
-    wire->bend_y1 = new_bendy1;
-    wire->bend_x2 = new_bendx2;
-    wire->bend_y2 = new_bendy2;
-    change_wire_route(*wire, 1);
 }
 
 // Initialize problem
