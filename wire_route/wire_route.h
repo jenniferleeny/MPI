@@ -12,7 +12,6 @@ typedef struct
     int bend_x2;
     int bend_y1;
     int bend_y2;
-    cost_t cost;
 } wire_t;
 
 // Perform computation, including reading/writing output files
