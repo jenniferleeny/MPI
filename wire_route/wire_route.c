@@ -17,6 +17,7 @@ static int g_delta = 0;
 static int g_num_wires = 0;
 wire_t *wires = NULL;
 cost_t *costs = NULL;
+cost_t *costs_T = NULL; // transposed cost matrix
 
 typedef struct
 {
@@ -67,6 +68,21 @@ cost_t costs_agg_overlap() {
     return agg_cost;
 }
 
+static inline void swap(int i, int j) {
+    wire_t temp = wires[i];
+    wires[i] = wires[j];
+    wires[j] = temp;
+}
+
+static void sort_wires() {
+    return;
+
+    for (int i = 0; i < g_num_wires; i++) {
+        int random_index = rand() % (g_num_wires);
+        swap(i, random_index);
+    }
+}
+
 pair_t find_score_h(int i, int x1, int y1, int x2, int y2, pair_t best) {
     pair_t result;
     result.first = 0;
@@ -86,24 +102,23 @@ pair_t find_score_h(int i, int x1, int y1, int x2, int y2, pair_t best) {
 
     dir = y1 < i ? 1 : -1;
     for (int y = y1; y != i; y += dir) {
-        cost_t cost = 1 + costs[g_num_cols * y + x1];
+        // cost_t cost = 1 + costs[g_num_cols * y + x1];
+        cost_t cost = 1 + costs_T[x1 * g_num_rows + y];
         result.first = max(result.first, cost);
         result.second += cost;
 
-        if (worse_than_equal_to(result, best)) {
-            return result;
-        }
     }
+    if (worse_than_equal_to(result, best)) {
+        return result;
+    }
+
     
     dir = i < y2 ? 1 : -1;
     for (int y = i; y != y2; y += dir) {
-        cost_t cost = 1 + costs[g_num_cols * y + x2];
+        // cost_t cost = 1 + costs[g_num_cols * y + x2];
+        cost_t cost = 1 + costs_T[x2 * g_num_rows + y];
         result.first = max(result.first, cost);
         result.second += cost;
-
-        if (worse_than_equal_to(result, best)) {
-            return result;
-        }
     }
     cost_t cost = 1 + costs[g_num_cols * y2 + x2];
     result.first = max(result.first, cost);
@@ -138,15 +153,17 @@ pair_t find_score_v(int i, int x1, int y1, int x2, int y2, pair_t best) {
     result.first = max(result.first, cost);
     result.second += cost;
 
+    if (worse_than_equal_to(result, best)) {
+        return result;
+    }
+
+
     dir = y1 < y2 ? 1 : -1;
     for (int y = y1; y != y2; y += dir) {
-        cost_t cost = 1 + costs[g_num_cols * y + i];
+        // cost_t cost = 1 + costs[g_num_cols * y + i];
+        cost_t cost = 1 + costs_T[i * g_num_rows + y];
         result.first = max(result.first, cost);
         result.second += cost;
-
-        if (worse_than_equal_to(result, best)) {
-            return result;
-        }
     }
 
     return result;
@@ -159,21 +176,25 @@ void change_wire_route_helper(int x1, int y1, int x2, int y2,
     if (y1 == y2) {
         if (x1 <= x2) {
             for (int i = x1; i < x2; i++) {
-                costs[ y1 * g_num_cols + i] += increment;
+                costs[y1 * g_num_cols + i] += increment;
+                costs_T[i * g_num_rows + y1] += increment;
             }
         } else {
             for (int i = x1; i > x2; i-=1) {
                 costs[y1 * g_num_cols + i] += increment;
+                costs_T[i * g_num_rows + y1] += increment;
             }
         }
     } else {
         if (y1 <= y2) {
             for (int i = y1; i < y2; i++) {
                 costs[i * g_num_cols + x1] += increment;
+                costs_T[x1 * g_num_rows + i] += increment;
             }
         } else {
             for (int i = y1; i > y2; i--) {
                 costs[i * g_num_cols + x1] += increment;
+                costs_T[x1 * g_num_rows + i] += increment;
             }
 
         }
@@ -185,6 +206,7 @@ void change_wire_route(wire_t wire, int increment) {
         change_wire_route_helper(wire.x1, wire.y1, wire.x2, 
             wire.y2, increment);
         costs[wire.y2 * g_num_cols + wire.x2] += increment; 
+        costs_T[wire.x2 * g_num_rows + wire.y2] += increment;
         return;
     }
     change_wire_route_helper(wire.x1, wire.y1, wire.bend_x1, wire.bend_y1,
@@ -198,24 +220,36 @@ void change_wire_route(wire_t wire, int increment) {
         change_wire_route_helper(wire.bend_x1, wire.bend_y1,
                         wire.x2, wire.y2, increment);
     }
-    costs[wire.y2 * g_num_cols + wire.x2] += increment; 
+    costs[wire.y2 * g_num_cols + wire.x2] += increment;
+    costs_T[wire.x2 * g_num_rows + wire.y2] += increment;
 }
 
 pair_t anneal(wire_t wire) {
-    int dx = abs(wire.x2 - wire.x1) + 1;
-    int dy = abs(wire.y2 - wire.y1) + 1;
+
+    int x1 = wire.x1;
+    int y1 = wire.y1;
+    int x2 = wire.x2;
+    int y2 = wire.y2;
+
+    int x_max = min(g_num_cols-1, (int)(g_delta/2) + max(x1, x2));
+    int x_min = max(0, min(x1, x2) - (int)(g_delta/2));
+    int y_max = min(g_num_rows-1, (int)(g_delta/2) + max(y1, y2));
+    int y_min = max(0, min(y1, y2) - (int)(g_delta/2));
+
+    int dx = x_max - x_min + 1;
+    int dy = y_max - y_min + 1;
     int random_index = rand() % (dx + dy);
     pair_t new_path;
     if (random_index < dx) {
         // this will be a 'vertical' path        
         new_path.first = 1;
-        new_path.second = min(wire.x1, wire.x2) + random_index;
+        new_path.second = x_min + random_index;
     }
     else {
         // this will be a 'horizontal' path
         random_index -= dx;
         new_path.first = 0;
-        new_path.second = min(wire.y1, wire.y2) + random_index;
+        new_path.second = y_min + random_index;
     }
 
     return new_path;
@@ -421,6 +455,7 @@ static inline void init(int numRows, int numCols, int delta, int numWires)
     g_num_wires = numWires;
     wires = (wire_t*)calloc(g_num_wires, sizeof(wire_t));
     costs = (cost_t*)calloc(g_num_rows * g_num_cols, sizeof(cost_t));
+    costs_T = (cost_t*)calloc(g_num_rows * g_num_cols, sizeof(cost_t));
 }
 
 
@@ -578,7 +613,13 @@ static inline void wire_routing(double anneal_prob) {
 // Perform computation, including reading/writing output files
 void compute(int procID, int nproc, char* inputFilename, double prob, 
              int numIterations) {
+    int world_rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
+
     readInput(inputFilename);
+
+    srand(0);
+    sort_wires();
 
     // have all wires initially have the wire path that is just a
     // horizontal line and then a vertical line
@@ -590,9 +631,6 @@ void compute(int procID, int nproc, char* inputFilename, double prob,
     for (int i = 0; i < numIterations; i++) {
         wire_routing(prob); 
     }
-
-    int world_rank;
-    MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
 
     if (world_rank == 0) {
         writeCost(inputFilename, nproc);
