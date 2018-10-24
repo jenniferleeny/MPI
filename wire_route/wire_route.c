@@ -201,44 +201,24 @@ void change_wire_route(wire_t wire, int increment) {
     costs[wire.y2 * g_num_cols + wire.x2] += increment; 
 }
 
-void anneal(wire_t *wire) {
-    // if (wire->cost != -1)
+pair_t anneal(wire_t *wire) {
     int dx = abs(wire->x2 - wire->x1) + 1;
     int dy = abs(wire->y2 - wire->y1) + 1;
     int random_index = rand() % (dx + dy);
+    pair_t new_path;
     if (random_index < dx) {
-        // this will be a 'vertical' path
-        if (random_index == 0) {
-            wire->bend_x1 = wire->x1;
-            wire->bend_y1 = wire->y2;
-            wire->bend_x2 = -1;
-            wire->bend_y2 = -1;
-        }
-        else {
-            int dir = ceil((double)(wire->x2 - wire->x1) / dx);
-            wire->bend_x1 = wire->x1 + dir * (random_index);
-            wire->bend_y1 = wire->y1;
-            wire->bend_x2 = wire->bend_x1 == wire->x2 ? -1 : wire->bend_x1;
-            wire->bend_y2 = wire->bend_x1 == wire->x2 ? -1 : wire->y2;
-        }
+        // this will be a 'vertical' path        
+        new_path.first = 1;
+        new_path.second = min(wire->x1, wire->x2) + random_index;
     }
     else {
         // this will be a 'horizontal' path
         random_index -= dx;
-        if (random_index == 0) {
-            wire->bend_x1 = wire->x2;
-            wire->bend_y1 = wire->y1;
-            wire->bend_x2 = -1;
-            wire->bend_y2 = -1;
-        }
-        else {
-            int dir = ceil((double)(wire->y2 - wire->y1) / dy);
-            wire->bend_x1 = wire->x1;
-            wire->bend_y1 = wire->y1 + dir * random_index;
-            wire->bend_x2 = wire->bend_y1 == wire->y2 ? -1 : wire->x2;
-            wire->bend_y2 = wire->bend_y1 == wire->y2 ? -1 : wire->bend_y1;
-        }
+        new_path.first = 0;
+        new_path.second = min(wire->y1, wire->y2) + random_index;
     }
+
+    return new_path;
 }
 
 void set_wire(wire_t *wire, int vertical, int location) {
@@ -282,19 +262,47 @@ void set_wire(wire_t *wire, int vertical, int location) {
 // find_mind_path_cost: takes in (wire.x1, wire.y1) to (wire.x2, wire.y2) and 
 // adds the wire route to costs
 void find_min_path(wire_t *wire, double anneal_prob) {
-    /* double prob_sample = ((double)rand()) / ((double)RAND_MAX);
-    if (prob_sample < anneal_prob) {
-        change_wire_route(*wire, -1);
-        anneal(wire);
-        change_wire_route(*wire, 1);
-        return;
-    } */
-
     int world_rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
     int world_size;
     MPI_Comm_size(MPI_COMM_WORLD,&world_size);
     MPI_Status status;
+
+    int annealed_size = 2;
+    int annealed_path[annealed_size];
+
+    if (world_rank == 0) {
+        double prob_sample = ((double)rand()) / ((double)RAND_MAX);
+        if (prob_sample < anneal_prob) {
+            change_wire_route(*wire, -1);
+            pair_t new_path = anneal(wire);
+
+            annealed_path[0] = new_path.first;
+            annealed_path[1] = new_path.second;
+
+            set_wire(wire, annealed_path[0], annealed_path[1]);
+            change_wire_route(*wire, 1);
+
+            MPI_Bcast(&annealed_path, annealed_size, MPI_INT, 0, 
+                      MPI_COMM_WORLD);
+            return;
+        } else {
+            annealed_path[0] = -1;
+            annealed_path[1] = -1;
+            MPI_Bcast(&annealed_path, annealed_size, MPI_INT, 0, 
+                      MPI_COMM_WORLD);
+        }
+
+    } else {
+        MPI_Bcast(&annealed_path, annealed_size, MPI_INT, 0, MPI_COMM_WORLD);
+
+        if (annealed_path[0] != -1 && annealed_path[1] != -1) {
+            change_wire_route(*wire, -1);
+            set_wire(wire, annealed_path[0], annealed_path[1]);
+            change_wire_route(*wire, 1);
+            return;
+        }
+    }
 
     int x1, x2, y1, y2;
     
