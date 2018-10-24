@@ -241,20 +241,61 @@ void anneal(wire_t *wire) {
     }
 }
 
+void set_wire(wire_t *wire, int vertical, int location) {
+    int new_bendx1 = -1;
+    int new_bendy1 = -1;
+    int new_bendx2 = -1;
+    int new_bendy2 = -1;
+
+    if (vertical == 1) {
+        if ( !(wire->x1 == wire->x2 && location == wire->x1) ) {
+            new_bendx1 = location;
+            if (location == wire->x1) {
+                new_bendy1 = wire->y2;
+            } else {
+                new_bendy1 = wire->y1;
+            } if (location != wire->x1 && location != wire->x2) {
+                new_bendy2 = wire->y2;
+                new_bendx2 = location;
+            }
+        }
+    } else { // horizontal
+        if ( !(wire->y1 == wire->y2 && location == wire->y1) ) {
+            new_bendy1 = location;
+            if (location == wire->y1) {
+                new_bendx1 = wire->x2;
+            } else {
+                new_bendx1 = wire->x1;
+            } if (location != wire->y1 && location != wire->y2) {
+                new_bendy2 = location;
+                new_bendx2 = wire->x2;
+            }
+        }
+    }
+
+    wire->bend_x1 = new_bendx1;
+    wire->bend_y1 = new_bendy1;
+    wire->bend_x2 = new_bendx2;
+    wire->bend_y2 = new_bendy2;
+}
+
 // find_mind_path_cost: takes in (wire.x1, wire.y1) to (wire.x2, wire.y2) and 
 // adds the wire route to costs
 void find_min_path(wire_t *wire, double anneal_prob) {
-    /*double prob_sample = ((double)rand()) / ((double)RAND_MAX);
+    /* double prob_sample = ((double)rand()) / ((double)RAND_MAX);
     if (prob_sample < anneal_prob) {
         change_wire_route(*wire, -1);
         anneal(wire);
         change_wire_route(*wire, 1);
         return;
-    }*/
+    } */
+
     int world_rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
     int world_size;
     MPI_Comm_size(MPI_COMM_WORLD,&world_size);
+    MPI_Status status;
+
     int x1, x2, y1, y2;
     
     if (wire->x1 <= wire->x2) {
@@ -268,7 +309,6 @@ void find_min_path(wire_t *wire, double anneal_prob) {
         x2 = wire->x1;
         y2 = wire->y1;
     }
-    // printf("wire: %d %d %d %d\n", x1, y1, x2, y2);
     int x_max = min(g_num_cols-1, (int)(g_delta/2) + x2);
     int x_min = max(0, x1 - (int)(g_delta/2));
     int y_max = min(g_num_rows-1, (int)(g_delta/2) + max(y1, y2));
@@ -283,9 +323,6 @@ void find_min_path(wire_t *wire, double anneal_prob) {
     }
 
     change_wire_route(*wire, -1);
-    //printf("%d %d %d %d\n", wire->bend_x1, wire->bend_y1, wire->bend_x2,
-    //        wire->bend_y2);
-    // print(costs, g_num_rows, g_num_cols);
    
     // MAIN IDEA: 
     // horizontal keeps track of the path cost of a wire route that has a 
@@ -293,17 +330,11 @@ void find_min_path(wire_t *wire, double anneal_prob) {
     // vertical keeps track of the path cost of a wire route that has a bend 
     // at column y
    
-    int new_bendx1 = -1;
-    int new_bendy1 = -1;
-    int new_bendx2 = -1;
-    int new_bendy2 = -1;
-
     // find optimal wire route
     pair_t best_score;
     best_score.first = INT_MAX;
-    best_score.second = INT_MAX;
-    
-    int flag = 0;
+    best_score.second = INT_MAX;    
+    int vertical = 0;
     int index = -1;
 
     double frac1 = (double)world_rank / (double)world_size;
@@ -319,97 +350,61 @@ void find_min_path(wire_t *wire, double anneal_prob) {
             best_score = current_score;
         }
     }
+
     int x_start = x_min + ceil(frac1 * (double)(x_max - x_min ));
     int x_end = x_min + ceil(frac2 * (double)(x_max - x_min ));
-
-   for (int i = x_start; i < x_end; i++) {
+    for (int i = x_start; i < x_end; i++) {
         pair_t current_score = find_score_v(i, x1, y1, x2, y2, best_score);
         if (better_than(current_score, best_score)) {
             best_score = current_score;
-            flag = 1;
+            vertical = 1;
             index = i;
         }
     }
-    // printf("%d %d %d %d\n", wire->x1, wire->y1, wire->x2, wire->y2);
-    // printf("y: %d %d x: %d %d, score %d, flag %d, index %d\n", y_start, y_end,
-            // x_start, x_end, best_score.first, flag, index);
 
-    // send data to master process
-    int num = 4;
-    int temp[num];
-    temp[0] = best_score.first;
-    temp[1] = best_score.second;
-    temp[2] = flag;
-    temp[3] = index;
-    MPI_Send(&temp, num, MPI_INT, 0, 0, MPI_COMM_WORLD);
-    // gather data to master process
-    int *buffer = NULL;
-    if (world_rank == 0) {
-        buffer = malloc(sizeof(int) * num * world_size);
-    }   
-    MPI_Gather(&temp, num, MPI_INT, buffer, num, MPI_INT, 0, MPI_COMM_WORLD);
-    if (world_rank == 0) {
-        /*for (int i = 0; i < world_size; i++) {
-            for (int j = 0; j < num; j++) {
-                printf("%d ", buffer[num*i + j]);
-            }
-            printf("\n");
-        }*/
-        int best = INT_MAX;
-        int agg = INT_MAX;
-        int final_flag = -1;
-        int final_ind = -1;
-        for (int i = 0; i < num*world_size; i+=4) {
-            if (best > buffer[i]) {
-                best = buffer[i];
-                agg = buffer[i+1];
-                final_flag = buffer[i+2];
-                final_ind = buffer[i+3];
-            } else if (best == buffer[i] && agg > buffer[i+1]) {
-                best = buffer[i];
-                agg = buffer[i+1];
-                final_flag = buffer[i+2];
-                final_ind = buffer[i+3];
-            }
-        }
-        printf("%d %d\n", final_ind, final_flag);
+    int message_size = 4;
+    int temp[message_size];
 
-        if (final_flag) { // vertical
-            if ( !(wire->x1 == wire->x2 && final_ind == wire->x1) ) {
-                new_bendx1 = final_ind;
-                if (final_ind == wire->x1) {
-                    new_bendy1 = wire->y2;
-                } else {
-                    // if horizontal segment aligns w/ y2 or != y1
-                    new_bendy1 = wire->y1;
-                } if (final_ind != wire->x1 && final_ind != wire->x2) {
-                    new_bendy2 = wire->y2;
-                    new_bendx2 = final_ind;
-                }
-            }
-        } else {
-            if ( !(wire->y1 == wire->y2 && final_ind == wire->y1) ) {
-                // if horizontal segment is align y1
-                new_bendy1 = final_ind;
-                if (final_ind == wire->y1) {
-                    new_bendx1 = wire->x2;
-                } else {
-                    // if horizontal segment aligns w/ y2 or != y1
-                    new_bendx1 = wire->x1;
-                } if (final_ind != wire->y1 && final_ind != wire->y2) {
-                    new_bendy2 = final_ind;
-                    new_bendx2 = wire->x2;
-                }
-            }
-        }
-        wire->bend_x1 = new_bendx1;
-        wire->bend_y1 = new_bendy1;
-        wire->bend_x2 = new_bendx2;
-        wire->bend_y2 = new_bendy2;
-        // printf("%d %d %d %d\n", wire->x1, wire->y1, wire->x2, wire->y2);
-        // printf("%d %d %d %d\n", new_bendx1, new_bendy1, new_bendx2, new_bendy2);
-        change_wire_route(*wire, 1);
+    if (world_rank != 0) {
+        // send data to master process
+        temp[0] = best_score.first;
+        temp[1] = best_score.second;
+        temp[2] = vertical;
+        temp[3] = index;
+
+        MPI_Send(&temp, message_size, MPI_INT, 0, 0, MPI_COMM_WORLD);
+
+        MPI_Bcast(&temp, message_size, MPI_INT, 0, MPI_COMM_WORLD);
+
+        vertical = temp[2];
+        index = temp[3];
     }
+
+    if (world_rank == 0) {
+        // gather data to master process
+        pair_t temp_score;
+        for (int i = 1; i < world_size; i++) {
+            MPI_Recv(&temp, message_size, MPI_INT, i, 0, MPI_COMM_WORLD, 
+                     &status);
+            temp_score.first = temp[0];
+            temp_score.second = temp[1];
+            if (better_than(temp_score, best_score)) {
+                best_score = temp_score;
+                vertical = temp[2];
+                index = temp[3];
+            }
+        }
+
+        temp[0] = best_score.first;
+        temp[1] = best_score.second;
+        temp[2] = vertical;
+        temp[3] = index;
+
+        MPI_Bcast(&temp, message_size, MPI_INT, 0, MPI_COMM_WORLD);
+    }
+
+    set_wire(wire, vertical, index);
+    change_wire_route(*wire, 1);
 }
 
 // Initialize problem
@@ -511,12 +506,13 @@ static inline void wire_routing(double anneal_prob) {
 
 // Perform computation, including reading/writing output files
 void compute(int procID, int nproc, char* inputFilename, double prob, 
-             int numIterations)
-{
+             int numIterations) {
     readInput(inputFilename);
 
+    // have all wires initially have the wire path that is just a
+    // horizontal line and then a vertical line
     for (int i = 0; i < g_num_wires; i++) {
-        anneal(&wires[i]);
+        set_wire(&wires[i], 0, wires[i].y1);
         change_wire_route(wires[i], 1);
     }
 
@@ -524,17 +520,19 @@ void compute(int procID, int nproc, char* inputFilename, double prob,
         wire_routing(prob); 
     }
 
-    //TODO Implement code here
-    //TODO Decide which processors should be reading/writing files
-    writeCost(inputFilename, nproc);
-    writeOutput(inputFilename, nproc);
+    int world_rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
 
-    cost_t max_cost = costs_max_overlap();
-    printf("Max cost: %d\n", max_cost);
+    if (world_rank == 0) {
+        writeCost(inputFilename, nproc);
+        writeOutput(inputFilename, nproc);
+
+        cost_t max_cost = costs_max_overlap();
+        printf("Max cost: %d\n", max_cost);
     
-
-    cost_t agg_cost = costs_agg_overlap();
-    printf("Agg cost: %d\n", agg_cost);
+        cost_t agg_cost = costs_agg_overlap();
+        printf("Agg cost: %d\n", agg_cost);
+    }
 }
 
 // Read input file
