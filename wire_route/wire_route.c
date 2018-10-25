@@ -31,7 +31,11 @@ bool better_than(pair_t x, pair_t y) {
     return x.first < y.first || (x.first == y.first && x.second < y.second);
 }
 
-bool worse_than_equal_to(pair_t x, pair_t y) {
+bool equal_to(pair_t x, pair_t y) {
+    return x.first == y.first && x.second == y.second;
+}
+
+bool worse_than(pair_t x, pair_t y) {
     return x.first > y.first || (x.first == y.first && x.second >= y.second);
 }
 
@@ -88,39 +92,36 @@ pair_t find_score_h(int i, int x1, int y1, int x2, int y2, pair_t best) {
     result.first = 0;
     result.second = 0;
 
-    int dir = x1 < x2 ? 1 : -1;
-    for (int x = x1; x != x2; x += dir) {
-        cost_t cost = 1 + costs[g_num_cols * i + x];
-        result.first = max(result.first, cost);
-        result.second += cost;
-    }
-    if (worse_than_equal_to(result, best)) {
-        return result;
-    }
-
-
-
-    dir = y1 < i ? 1 : -1;
+    int dir = y1 < i ? 1 : -1;
     for (int y = y1; y != i; y += dir) {
-        // cost_t cost = 1 + costs[g_num_cols * y + x1];
         cost_t cost = 1 + costs_T[x1 * g_num_rows + y];
         result.first = max(result.first, cost);
         result.second += cost;
 
     }
-    if (worse_than_equal_to(result, best)) {
+
+    if (worse_than(result, best)) {
         return result;
     }
 
+    dir = x1 < x2 ? 1 : -1;
+    for (int x = x1; x != x2; x += dir) {
+        cost_t cost = 1 + costs[g_num_cols * i + x];
+        result.first = max(result.first, cost);
+        result.second += cost;
+    }
+
+    if (worse_than(result, best)) {
+        return result;
+    }
     
     dir = i < y2 ? 1 : -1;
     for (int y = i; y != y2; y += dir) {
-        // cost_t cost = 1 + costs[g_num_cols * y + x2];
         cost_t cost = 1 + costs_T[x2 * g_num_rows + y];
         result.first = max(result.first, cost);
         result.second += cost;
     }
-    cost_t cost = 1 + costs[g_num_cols * y2 + x2];
+    cost_t cost = 1 + costs_T[x2 * g_num_rows + y2];
     result.first = max(result.first, cost);
     result.second += cost;
 
@@ -139,7 +140,18 @@ pair_t find_score_v(int i, int x1, int y1, int x2, int y2, pair_t best) {
         result.second += cost;
     }
 
-    if (worse_than_equal_to(result, best)) {
+    if (worse_than(result, best)) {
+        return result;
+    }
+
+    dir = y1 < y2 ? 1 : -1;
+    for (int y = y1; y != y2; y += dir) {
+        cost_t cost = 1 + costs_T[i * g_num_rows + y];
+        result.first = max(result.first, cost);
+        result.second += cost;
+    }
+
+    if (worse_than(result, best)) {
         return result;
     }
 
@@ -152,19 +164,6 @@ pair_t find_score_v(int i, int x1, int y1, int x2, int y2, pair_t best) {
     cost_t cost = 1 + costs[g_num_cols * y2 + x2];
     result.first = max(result.first, cost);
     result.second += cost;
-
-    if (worse_than_equal_to(result, best)) {
-        return result;
-    }
-
-
-    dir = y1 < y2 ? 1 : -1;
-    for (int y = y1; y != y2; y += dir) {
-        // cost_t cost = 1 + costs[g_num_cols * y + i];
-        cost_t cost = 1 + costs_T[i * g_num_rows + y];
-        result.first = max(result.first, cost);
-        result.second += cost;
-    }
 
     return result;
 }
@@ -235,6 +234,16 @@ pair_t anneal(wire_t wire) {
     int x_min = max(0, min(x1, x2) - (int)(g_delta/2));
     int y_max = min(g_num_rows-1, (int)(g_delta/2) + max(y1, y2));
     int y_min = max(0, min(y1, y2) - (int)(g_delta/2));
+
+    if (wire.y1 == wire.y2) {
+        x_min = min(x1, x2);
+        x_max = max(x1, x2);
+    }   
+    if (wire.x1 == wire.x2) {
+        y_min = min(y1, y2);
+        y_max = max(y1, y2);
+    }
+
 
     int dx = x_max - x_min + 1;
     int dy = y_max - y_min + 1;
@@ -363,14 +372,15 @@ pair_t find_min_path(wire_t wire, double anneal_prob,
         x_max = x2;
     }   
     if (wire.x1 == wire.x2) {
-        y_min = y1;
-        y_max = y2;
+        y_min = min(y1, y2);
+        y_max = max(y1, y2);
     }
  
     // find optimal wire route
     pair_t best_score;
     best_score.first = INT_MAX;
-    best_score.second = INT_MAX;    
+    best_score.second = INT_MAX;
+    int tie_breaker = 0;
     int vertical = 0;
     int index = -1;
 
@@ -385,6 +395,13 @@ pair_t find_min_path(wire_t wire, double anneal_prob,
         if (better_than(current_score, best_score)) {
             index = i; 
             best_score = current_score;
+            tie_breaker = rand();
+        } else if (equal_to(current_score, best_score)) {
+            int r = rand();
+            if (r > tie_breaker) {
+                index = i; 
+                tie_breaker = r;
+            }
         }
     }
 
@@ -396,6 +413,13 @@ pair_t find_min_path(wire_t wire, double anneal_prob,
             best_score = current_score;
             vertical = 1;
             index = i;
+        } else if (equal_to(current_score, best_score)) {
+            int r = rand();
+            if (r > tie_breaker) {
+                vertical = 1;
+                index = i; 
+                tie_breaker = r;
+            }
         }
     }
 
@@ -539,7 +563,7 @@ static inline void wire_routing(double anneal_prob) {
     MPI_Comm_size(MPI_COMM_WORLD,&world_size);
     MPI_Status status;
 
-    int parallelized_wires = 2;
+    int parallelized_wires = 8;
     parallelized_wires = min(parallelized_wires, world_size);
     int processes_per_wire = (world_size + parallelized_wires - 1) / 
                               parallelized_wires;
@@ -567,7 +591,6 @@ static inline void wire_routing(double anneal_prob) {
 
             pair_t new_path_pair = find_min_path(wires[wire_index],
                                     anneal_prob, base_rank, top_rank);
-
 
             new_path[0] = new_path_pair.first;
             new_path[1] = new_path_pair.second;
@@ -618,7 +641,7 @@ void compute(int procID, int nproc, char* inputFilename, double prob,
 
     readInput(inputFilename);
 
-    srand(0);
+    srand(01);
     sort_wires();
 
     // have all wires initially have the wire path that is just a
