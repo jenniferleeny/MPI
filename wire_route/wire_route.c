@@ -95,7 +95,7 @@ pair_t find_score_h(int i, int x1, int y1, int x2, int y2, pair_t best) {
         result.first = max(result.first, cost);
         result.second += cost;
 
-        if (worse_than_equal_to(result, best)) {
+        if (cost > best.first) {
             return result;
         }
     }
@@ -104,14 +104,13 @@ pair_t find_score_h(int i, int x1, int y1, int x2, int y2, pair_t best) {
         return result;
     }
 
-
     dir = x1 < x2 ? 1 : -1;
     for (int x = x1; x != x2; x += dir) {
         cost_t cost = 1 + costs[g_num_cols * i + x];
         result.first = max(result.first, cost);
         result.second += cost;
 
-        if (worse_than_equal_to(result, best)) {
+        if (cost > best.first) {
             return result;
         }
     }
@@ -127,7 +126,7 @@ pair_t find_score_h(int i, int x1, int y1, int x2, int y2, pair_t best) {
         result.first = max(result.first, cost);
         result.second += cost;
 
-        if (worse_than_equal_to(result, best)) {
+        if (cost > best.first) {
             return result;
         }
     }
@@ -150,7 +149,7 @@ pair_t find_score_v(int i, int x1, int y1, int x2, int y2, pair_t best) {
         result.first = max(result.first, cost);
         result.second += cost;
 
-        if (worse_than_equal_to(result, best)) {
+        if (cost > best.first) {
             return result;
         }
     }
@@ -165,7 +164,7 @@ pair_t find_score_v(int i, int x1, int y1, int x2, int y2, pair_t best) {
         result.first = max(result.first, cost);
         result.second += cost;
 
-        if (worse_than_equal_to(result, best)) {
+        if (cost > best.first) {
             return result;
         }
     }
@@ -177,7 +176,6 @@ pair_t find_score_v(int i, int x1, int y1, int x2, int y2, pair_t best) {
         return result;
     }
 
-
     dir = y1 < y2 ? 1 : -1;
     for (int y = y1; y != y2; y += dir) {
         // cost_t cost = 1 + costs[g_num_cols * y + i];
@@ -185,7 +183,7 @@ pair_t find_score_v(int i, int x1, int y1, int x2, int y2, pair_t best) {
         result.first = max(result.first, cost);
         result.second += cost;
 
-        if (worse_than_equal_to(result, best)) {
+        if (cost > best.first) {
             return result;
         }
     }
