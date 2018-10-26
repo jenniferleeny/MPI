@@ -236,6 +236,15 @@ pair_t anneal(wire_t wire) {
     int y_max = min(g_num_rows-1, (int)(g_delta/2) + max(y1, y2));
     int y_min = max(0, min(y1, y2) - (int)(g_delta/2));
 
+    if (wire.y1 == wire.y2) {
+        x_min = x1;
+        x_max = x2;
+    }   
+    if (wire.x1 == wire.x2) {
+        y_min = y1;
+        y_max = y2;
+    }
+
     int dx = x_max - x_min + 1;
     int dy = y_max - y_min + 1;
     int random_index = rand() % (dx + dy);
@@ -358,6 +367,7 @@ pair_t find_min_path(wire_t wire, double anneal_prob,
     int x_min = max(0, x1 - (int)(g_delta/2));
     int y_max = min(g_num_rows-1, (int)(g_delta/2) + max(y1, y2));
     int y_min = max(0, min(y1, y2) - (int)(g_delta/2));
+
     if (wire.y1 == wire.y2) {
         x_min = x1;
         x_max = x2;
@@ -374,13 +384,16 @@ pair_t find_min_path(wire_t wire, double anneal_prob,
     int vertical = 0;
     int index = -1;
 
-    double frac1 = (double)world_rank / (double)world_size;
-    double frac2 = (double)(world_rank+1) / (double)world_size;
+    int processes = top_rank - base_rank;
+    int process_index = world_rank - base_rank;
 
-    int y_start = y_min + ceil(frac1 * (double)(y_max - y_min));
-    int y_end = y_min + ceil(frac2 * (double)(y_max - y_min));
+    int ys = y_max - y_min + 1;
+    int ysPerProcess = (ys + processes - 1) / processes;
+
+    int y_start = y_min + process_index * ysPerProcess;
+    int y_end = min(y_start + ysPerProcess, y_max + 1);
     // horizontal
-    for (int i = y_start; i <= y_end; i++) {
+    for (int i = y_start; i < y_end; i++) {
         pair_t current_score = find_score_h(i, x1, y1, x2, y2, best_score);
         if (better_than(current_score, best_score)) {
             index = i; 
@@ -388,8 +401,12 @@ pair_t find_min_path(wire_t wire, double anneal_prob,
         }
     }
 
-    int x_start = x_min + ceil(frac1 * (double)(x_max - x_min ));
-    int x_end = x_min + ceil(frac2 * (double)(x_max - x_min ));
+    int xs = x_max - x_min + 1;
+    int xsPerProcess = (xs + processes - 1) / processes;
+
+    int x_start = x_min + process_index * xsPerProcess;
+    int x_end = min(x_start + xsPerProcess, x_max + 1);
+    // vertical
     for (int i = x_start; i < x_end; i++) {
         pair_t current_score = find_score_v(i, x1, y1, x2, y2, best_score);
         if (better_than(current_score, best_score)) {
@@ -539,7 +556,7 @@ static inline void wire_routing(double anneal_prob) {
     MPI_Comm_size(MPI_COMM_WORLD,&world_size);
     MPI_Status status;
 
-    int parallelized_wires = 2;
+    int parallelized_wires = 4;
     parallelized_wires = min(parallelized_wires, world_size);
     int processes_per_wire = (world_size + parallelized_wires - 1) / 
                               parallelized_wires;
@@ -568,12 +585,14 @@ static inline void wire_routing(double anneal_prob) {
             pair_t new_path_pair = find_min_path(wires[wire_index],
                                     anneal_prob, base_rank, top_rank);
 
-
             new_path[0] = new_path_pair.first;
             new_path[1] = new_path_pair.second;
     
             set_wire(&wires[wire_index], new_path[0], new_path[1]);
             change_wire_route(wires[wire_index], 1);  
+        } else {
+            new_path[0] = -1;
+            new_path[1] = -1;
         }
 
         // report new path to the master
@@ -581,7 +600,6 @@ static inline void wire_routing(double anneal_prob) {
             MPI_Send(&new_path, 2, MPI_INT, 0, 42,
                      MPI_COMM_WORLD); 
         }
-
 
         if (world_rank == 0) {
             // collect all the new paths from the workers
