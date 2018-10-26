@@ -328,49 +328,14 @@ void set_wire(wire_t *wire, int vertical, int location) {
 
 // find_mind_path_cost: takes in (wire.x1, wire.y1) to (wire.x2, wire.y2) and 
 // adds the wire route to costs
-pair_t find_min_path(wire_t wire, double anneal_prob, 
-                     int base_rank, int top_rank) {
+pair_t find_min_path(wire_t wire, double anneal_prob) {
 
     pair_t new_path;
 
-    int world_rank;
-    MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
-    MPI_Status status;
-    
-    int annealed_size = 2;
-    int annealed_path[annealed_size];
-
-    if (world_rank == base_rank) {
-        double prob_sample = ((double)rand()) / ((double)RAND_MAX);
-        if (prob_sample < anneal_prob) {
-            new_path = anneal(wire);
-
-            annealed_path[0] = new_path.first;
-            annealed_path[1] = new_path.second;
-
-            for (int i = base_rank + 1; i < top_rank; i++){
-                MPI_Send(&annealed_path, annealed_size, MPI_INT, i, 0, 
-                         MPI_COMM_WORLD);
-            } 
-            return new_path;
-        } else {
-            annealed_path[0] = -1;
-            annealed_path[1] = -1;
-
-            for (int i = base_rank + 1; i < top_rank; i++){
-                MPI_Send(&annealed_path, annealed_size, MPI_INT, i, 0, 
-                         MPI_COMM_WORLD);
-            } 
-        }
-    } else {
-        MPI_Recv(&annealed_path, annealed_size, MPI_INT, base_rank, 0,
-                      MPI_COMM_WORLD, &status);
-
-        if (annealed_path[0] != -1 && annealed_path[1] != -1) {
-            new_path.first = annealed_path[0];
-            new_path.second = annealed_path[1];
-            return new_path;
-        }
+    double prob_sample = ((double)rand()) / ((double)RAND_MAX);
+    if (prob_sample < anneal_prob) {
+        new_path = anneal(wire);
+        return new_path;
     }
 
     int x1, x2, y1, y2;
@@ -408,16 +373,8 @@ pair_t find_min_path(wire_t wire, double anneal_prob,
     int vertical = 0;
     int index = -1;
 
-    int processes = top_rank - base_rank;
-    int process_index = world_rank - base_rank;
-
-    int ys = y_max - y_min + 1;
-    int ysPerProcess = (ys + processes - 1) / processes;
-
-    int y_start = y_min + process_index * ysPerProcess;
-    int y_end = min(y_start + ysPerProcess, y_max + 1);
     // horizontal
-    for (int i = y_start; i < y_end; i++) {
+    for (int i = y_min; i <= y_max; i++) {
         pair_t current_score = find_score_h(i, x1, y1, x2, y2, best_score);
         if (better_than(current_score, best_score)) {
             index = i; 
@@ -425,13 +382,8 @@ pair_t find_min_path(wire_t wire, double anneal_prob,
         }
     }
 
-    int xs = x_max - x_min + 1;
-    int xsPerProcess = (xs + processes - 1) / processes;
-
-    int x_start = x_min + process_index * xsPerProcess;
-    int x_end = min(x_start + xsPerProcess, x_max + 1);
     // vertical
-    for (int i = x_start; i < x_end; i++) {
+    for (int i = x_min; i < x_max; i++) {
         pair_t current_score = find_score_v(i, x1, y1, x2, y2, best_score);
         if (better_than(current_score, best_score)) {
             best_score = current_score;
@@ -440,48 +392,8 @@ pair_t find_min_path(wire_t wire, double anneal_prob,
         }
     }
 
-    int message_size = 4;
-    int temp[message_size];
-
-    if (world_rank == base_rank) {
-        // gather data to master process
-        pair_t temp_score;
-        for (int i = base_rank + 1; i < top_rank; i++) {
-            MPI_Recv(&temp, message_size, MPI_INT, i, 1, MPI_COMM_WORLD, 
-                     &status);
-            temp_score.first = temp[0];
-            temp_score.second = temp[1];
-            if (better_than(temp_score, best_score)) {
-                best_score = temp_score;
-                vertical = temp[2];
-                index = temp[3];
-            }
-        }
-
-        temp[0] = best_score.first;
-        temp[1] = best_score.second;
-        temp[2] = vertical;
-        temp[3] = index;
-
-        for (int i = base_rank + 1; i < top_rank; i++){
-            MPI_Send(&temp, message_size, MPI_INT, i, 2,
-                     MPI_COMM_WORLD);
-        }
-    } else {
-        // send data to master process
-        temp[0] = best_score.first;
-        temp[1] = best_score.second;
-        temp[2] = vertical;
-        temp[3] = index;
-
-        MPI_Send(&temp, message_size, MPI_INT, base_rank, 1, MPI_COMM_WORLD);
-
-        MPI_Recv(&temp, message_size, MPI_INT, base_rank, 2,
-                 MPI_COMM_WORLD, &status);
-    }
-
-    new_path.first = temp[2];
-    new_path.second = temp[3];
+    new_path.first = vertical;
+    new_path.second = index;
     return new_path;
 }
 
@@ -578,18 +490,14 @@ static inline void wire_routing(double anneal_prob) {
     MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
     int world_size;
     MPI_Comm_size(MPI_COMM_WORLD,&world_size);
-    MPI_Status status;
+    // MPI_Status status;
 
-    int process_teams = 2; // controls how much wire 
-                           // parallelization is done
+    int process_teams = world_size; // controls how much wire 
+                                    // parallelization is done
     const int update_rate = 64; // controls how often wire updates are sent
 
-    process_teams = min(process_teams, world_size);
-    int processes_per_wire = (world_size + process_teams - 1) / 
-                              process_teams;
-    int team = world_rank / processes_per_wire;
-    int base_rank = team * processes_per_wire;
-    int top_rank = min(base_rank + processes_per_wire, world_size);
+    /* int processes_per_wire = (world_size + process_teams - 1) / 
+                              process_teams; */
 
     // stores the new path computed by this process
     const int path_size = 3;
@@ -601,7 +509,7 @@ static inline void wire_routing(double anneal_prob) {
     int new_paths[new_paths_size];
 
     int wires_per_team = (g_num_wires + process_teams - 1) / process_teams;
-    int chunk_start = wires_per_team * team;
+    int chunk_start = wires_per_team * world_rank;
     int chunk_end = min(chunk_start + wires_per_team, g_num_wires);
 
     for (int i = 0; i < wires_per_team; i += update_rate) {
@@ -611,7 +519,7 @@ static inline void wire_routing(double anneal_prob) {
                 change_wire_route(wires[wire_index], -1);
      
                 pair_t new_path_pair = find_min_path(wires[wire_index],
-                                        anneal_prob, base_rank, top_rank);
+                                                     anneal_prob);
      
                 update_paths[3 * j] = new_path_pair.first;
                 update_paths[3 * j + 1] = new_path_pair.second;
@@ -628,7 +536,7 @@ static inline void wire_routing(double anneal_prob) {
             }
         }
 
-        // report new path to the master
+        /* // report new path to the master
         if (world_rank > 0 && world_rank % processes_per_wire == 0) {
             MPI_Send(&update_paths, update_paths_size, MPI_INT, 0, 42,
                      MPI_COMM_WORLD); 
@@ -640,12 +548,11 @@ static inline void wire_routing(double anneal_prob) {
                 new_paths[j] = update_paths[j];
             }
 
-            for (int base = processes_per_wire; base < world_size; 
-                        base += processes_per_wire) {
-                MPI_Recv(&update_paths, update_paths_size, MPI_INT, base, 42,
+            for (int process = processes_per_wire; process < world_size;
+                        process++) {
+                MPI_Recv(&update_paths, update_paths_size, MPI_INT, process, 42,
                          MPI_COMM_WORLD, &status);
-                int base_index = base / processes_per_wire;
-                int new_paths_offset = base_index * update_paths_size;
+                int new_paths_offset = process * update_paths_size;
                 for (int j = 0; j < update_paths_size; j++) {
                     new_paths[j + new_paths_offset] = update_paths[j];
                 }
@@ -653,6 +560,10 @@ static inline void wire_routing(double anneal_prob) {
         }
 
         MPI_Bcast(&new_paths, new_paths_size, MPI_INT, 0, MPI_COMM_WORLD);
+        */
+
+        MPI_Allgather(&update_paths, update_paths_size, MPI_INT,
+                      &new_paths, update_paths_size, MPI_INT, MPI_COMM_WORLD);
 
         for (int j = 0; j < new_paths_size; j += path_size) {
             int wire_index = new_paths[j + 2];
