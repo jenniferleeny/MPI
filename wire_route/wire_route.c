@@ -494,7 +494,7 @@ static inline void wire_routing(double anneal_prob) {
 
     int process_teams = world_size; // controls how much wire 
                                     // parallelization is done
-    const int update_rate = 64; // controls how often wire updates are sent
+    const int update_rate = 24; // controls how often wire updates are sent
 
     /* int processes_per_wire = (world_size + process_teams - 1) / 
                               process_teams; */
