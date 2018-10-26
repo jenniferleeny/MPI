@@ -333,15 +333,9 @@ pair_t find_min_path(wire_t wire, double anneal_prob,
 
     pair_t new_path;
 
-    double prob_sample = ((double)rand()) / ((double)RAND_MAX);
-    if (prob_sample < anneal_prob) {
-        new_path = anneal(wire);
-        return new_path;
-    }
- 
     int world_rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
-    /* MPI_Status status;
+    MPI_Status status;
     
     int annealed_size = 2;
     int annealed_path[annealed_size];
@@ -377,7 +371,7 @@ pair_t find_min_path(wire_t wire, double anneal_prob,
             new_path.second = annealed_path[1];
             return new_path;
         }
-    } */
+    }
 
     int x1, x2, y1, y2;
     
@@ -446,7 +440,7 @@ pair_t find_min_path(wire_t wire, double anneal_prob,
         }
     }
 
-    /* int message_size = 4;
+    int message_size = 4;
     int temp[message_size];
 
     if (world_rank == base_rank) {
@@ -484,10 +478,10 @@ pair_t find_min_path(wire_t wire, double anneal_prob,
 
         MPI_Recv(&temp, message_size, MPI_INT, base_rank, 2,
                  MPI_COMM_WORLD, &status);
-    } */
+    }
 
-    new_path.first = vertical;
-    new_path.second = index;
+    new_path.first = temp[2];
+    new_path.second = temp[3];
     return new_path;
 }
 
@@ -586,9 +580,9 @@ static inline void wire_routing(double anneal_prob) {
     MPI_Comm_size(MPI_COMM_WORLD,&world_size);
     MPI_Status status;
 
-    int process_teams = 32; // controls how much wire 
+    int process_teams = 2; // controls how much wire 
                            // parallelization is done
-    const int update_rate = 1024; // controls how often wire updates are sent
+    const int update_rate = 64; // controls how often wire updates are sent
 
     process_teams = min(process_teams, world_size);
     int processes_per_wire = (world_size + process_teams - 1) / 
