@@ -16,8 +16,8 @@ static int g_num_cols = 0;
 static int g_delta = 0;
 static int g_num_wires = 0;
 wire_t *wires = NULL;
-cost_t *costs = NULL;
-cost_t *costs_T = NULL; // transposed cost matrix
+uint8_t *costs = NULL;
+uint8_t *costs_T = NULL; // transposed cost matrix
 
 typedef struct
 {
@@ -41,15 +41,6 @@ int max(int x, int y) {
 
 int min(int x, int y) {
     return x < y ? x : y;
-}
-
-void print(cost_t *array, int rows, int cols) {
-    for (int i = 0; i < rows; i++) {
-        for (int j = 0; j < cols; j++)  
-            printf("%d ", array[i*cols + j]);
-        printf("\n");
-    }
-    printf("\n");
 }
 
 cost_t costs_max_overlap() {
@@ -90,7 +81,6 @@ pair_t find_score_h(int i, int x1, int y1, int x2, int y2, pair_t best) {
 
     int dir = y1 < i ? 1 : -1;
     for (int y = y1; y != i; y += dir) {
-        // cost_t cost = 1 + costs[g_num_cols * y + x1];
         cost_t cost = 1 + costs_T[x1 * g_num_rows + y];
         result.first = max(result.first, cost);
         result.second += cost;
@@ -121,7 +111,6 @@ pair_t find_score_h(int i, int x1, int y1, int x2, int y2, pair_t best) {
     
     dir = i < y2 ? 1 : -1;
     for (int y = i; y != y2; y += dir) {
-        // cost_t cost = 1 + costs[g_num_cols * y + x2];
         cost_t cost = 1 + costs_T[x2 * g_num_rows + y];
         result.first = max(result.first, cost);
         result.second += cost;
@@ -130,7 +119,6 @@ pair_t find_score_h(int i, int x1, int y1, int x2, int y2, pair_t best) {
             return result;
         }
     }
-
     cost_t cost = 1 + costs[g_num_cols * y2 + x2];
     result.first = max(result.first, cost);
     result.second += cost;
@@ -178,7 +166,6 @@ pair_t find_score_v(int i, int x1, int y1, int x2, int y2, pair_t best) {
 
     dir = y1 < y2 ? 1 : -1;
     for (int y = y1; y != y2; y += dir) {
-        // cost_t cost = 1 + costs[g_num_cols * y + i];
         cost_t cost = 1 + costs_T[i * g_num_rows + y];
         result.first = max(result.first, cost);
         result.second += cost;
@@ -405,8 +392,8 @@ static inline void init(int numRows, int numCols, int delta, int numWires)
     g_delta = delta;
     g_num_wires = numWires;
     wires = (wire_t*)calloc(g_num_wires, sizeof(wire_t));
-    costs = (cost_t*)calloc(g_num_rows * g_num_cols, sizeof(cost_t));
-    costs_T = (cost_t*)calloc(g_num_rows * g_num_cols, sizeof(cost_t));
+    costs = (uint8_t*)calloc(g_num_rows * g_num_cols, sizeof(uint8_t));
+    costs_T = (uint8_t*)calloc(g_num_rows * g_num_cols, sizeof(uint8_t));
 }
 
 
@@ -488,8 +475,7 @@ static inline void wire_routing(double anneal_prob) {
     MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
     int world_size;
     MPI_Comm_size(MPI_COMM_WORLD,&world_size);
-    // MPI_Status status;
-
+    
     int process_teams = world_size; // controls how much wire 
                                     // parallelization is done
     const int update_rate = 24; // controls how often wire updates are sent
@@ -498,7 +484,7 @@ static inline void wire_routing(double anneal_prob) {
                               process_teams; */
 
     // stores the new path computed by this process
-    const int path_size = 3;
+    const int path_size = 1;
     int update_paths_size = path_size * update_rate;
     int update_paths[update_paths_size];
 
@@ -519,58 +505,37 @@ static inline void wire_routing(double anneal_prob) {
                 pair_t new_path_pair = find_min_path(wires[wire_index],
                                                      anneal_prob);
      
-                update_paths[3 * j] = new_path_pair.first;
-                update_paths[3 * j + 1] = new_path_pair.second;
-                update_paths[3 * j + 2] = wire_index;
+                update_paths[j] = 2 * new_path_pair.second + 
+                                      new_path_pair.first;
         
                 set_wire(&wires[wire_index], new_path_pair.first, 
                          new_path_pair.second);
                 change_wire_route(wires[wire_index], 1);
             }
             else {
-                update_paths[3 * j] = -1;
-                update_paths[3 * j + 1] = -1;
-                update_paths[3 * j + 2] = -1;
+                update_paths[j] = -1;
             }
         }
-
-        /* // report new path to the master
-        if (world_rank > 0 && world_rank % processes_per_wire == 0) {
-            MPI_Send(&update_paths, update_paths_size, MPI_INT, 0, 42,
-                     MPI_COMM_WORLD); 
-        }
-
-        else if (world_rank == 0) {
-            // collect all the new paths from the workers
-            for (int j = 0; j < update_paths_size; j++) {
-                new_paths[j] = update_paths[j];
-            }
-
-            for (int process = processes_per_wire; process < world_size;
-                        process++) {
-                MPI_Recv(&update_paths, update_paths_size, MPI_INT, process, 42,
-                         MPI_COMM_WORLD, &status);
-                int new_paths_offset = process * update_paths_size;
-                for (int j = 0; j < update_paths_size; j++) {
-                    new_paths[j + new_paths_offset] = update_paths[j];
-                }
-            }
-        }
-
-        MPI_Bcast(&new_paths, new_paths_size, MPI_INT, 0, MPI_COMM_WORLD);
-        */
 
         MPI_Allgather(&update_paths, update_paths_size, MPI_INT,
                       &new_paths, update_paths_size, MPI_INT, MPI_COMM_WORLD);
 
-        for (int j = 0; j < new_paths_size; j += path_size) {
-            int wire_index = new_paths[j + 2];
-            if (new_paths[j] != -1 && new_paths[j + 1] != -1) {
-                change_wire_route(wires[wire_index], -1);
-                set_wire(&wires[wire_index], new_paths[j], new_paths[j+1]);
-                change_wire_route(wires[wire_index], 1);
-            }
+        for (int rank = 0; rank < world_size; rank++) {
+            int wire_offset = wires_per_team * rank;
+            int new_paths_offset = update_paths_size * rank;
+            for (int j = 0; j < update_rate; j++) {
+                int wire_index = wire_offset + i + j;
+                if (new_paths[j] != -1 && wire_index < g_num_wires) {
 
+                    change_wire_route(wires[wire_index], -1);
+
+                    int orientation = new_paths[new_paths_offset + j] % 2;
+                    int location = new_paths[new_paths_offset + j] / 2;
+                    set_wire(&wires[wire_index], orientation, location);
+
+                    change_wire_route(wires[wire_index], 1);
+                }
+            }
         }
     }
 }

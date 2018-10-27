@@ -1,17 +1,19 @@
 #ifndef _WIRE_ROUTE_H
 #define _WIRE_ROUTE_H
 
+#include <stdint.h>
+
 typedef int cost_t;
 typedef struct
 {
-    int x1;
-    int x2;
-    int y1;
-    int y2;
-    int bend_x1;
-    int bend_x2;
-    int bend_y1;
-    int bend_y2;
+    int16_t x1;
+    int16_t x2;
+    int16_t y1;
+    int16_t y2;
+    int16_t bend_x1;
+    int16_t bend_x2;
+    int16_t bend_y1;
+    int16_t bend_y2;
 } wire_t;
 
 // Perform computation, including reading/writing output files
